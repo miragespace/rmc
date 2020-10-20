@@ -11,15 +11,20 @@ import (
 	"github.com/johnsto/go-passwordless"
 )
 
-// Auth provides passwordless authentication
-type Auth struct {
-	pw *passwordless.Passwordless
-}
+// Environment is the type for defining the running environment
+type Environment string
+
+// define constants
+const (
+	EnvDevelopment Environment = "Dev"
+	EnvProduction  Environment = "Prod"
+)
 
 // Options provides initialization parameters for Auth
 type Options struct {
 	Redis redis.UniversalClient
 
+	Environment Environment
 	SMTPAuth    smtp.Auth
 	From        string
 	Hostname    string
@@ -34,6 +39,12 @@ type EmailOption struct {
 
 // LinkGenerator is used to generator a login link
 type LinkGenerator func(uid, token string) string
+
+// Auth provides passwordless authentication
+type Auth struct {
+	pw      *passwordless.Passwordless
+	options Options
+}
 
 func (o *Options) validate() error {
 	if o == nil {
@@ -57,6 +68,9 @@ func (o *Options) validate() error {
 	if o.EmailOption.LinkGenerator == nil {
 		return fmt.Errorf("nil EmailOption.LinkGenerator is invalid")
 	}
+	if o.Environment == "" {
+		o.Environment = EnvDevelopment
+	}
 
 	return nil
 }
@@ -68,6 +82,11 @@ func New(option Options) (*Auth, error) {
 	}
 
 	pw := passwordless.New(passwordless.NewRedisStore(option.Redis))
+	pw.SetTransport("Log", passwordless.LogTransport{
+		MessageFunc: func(token, uid string) string {
+			return option.EmailOption.LinkGenerator(uid, token)
+		},
+	}, passwordless.NewCrockfordGenerator(8), time.Minute*30)
 	pw.SetTransport("Email", passwordless.NewSMTPTransport(
 		option.Hostname,
 		option.From,
@@ -76,13 +95,21 @@ func New(option Options) (*Auth, error) {
 	), passwordless.NewCrockfordGenerator(32), time.Minute*15)
 
 	return &Auth{
-		pw: pw,
+		pw:      pw,
+		options: option,
 	}, nil
+}
+
+func (a *Auth) getTransport() string {
+	if a.options.Environment == EnvProduction {
+		return "Email"
+	}
+	return "Log"
 }
 
 // Request will send a link to email with the login token
 func (a *Auth) Request(ctx context.Context, uid, recipient string) error {
-	return a.pw.RequestToken(ctx, "Email", uid, recipient)
+	return a.pw.RequestToken(ctx, a.getTransport(), uid, recipient)
 }
 
 // Verify checks if the login token is valid and corresonds to the user

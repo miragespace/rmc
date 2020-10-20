@@ -1,0 +1,49 @@
+version: "3"
+services:
+  rabbit:
+    container_name: rmc-rabbitmq
+    image: rabbitmq:3.8.8-management # matching CloudAMQP version
+    restart: always
+    ports:
+      - 5672:5672
+      - 15672:15672
+
+  postgres:
+    container_name: rmc-postgres
+    image: postgres:11.8 # matching ElephantSQL version
+    restart: always
+    environment:
+      POSTGRES_DB: "rmc"
+      POSTGRES_PASSWORD: "rmc"
+      POSTGRES_USER: "rmc"
+    ports:
+      - 5432:5432
+
+  redis:
+    container_name: rmc-redis
+    image: redis:6.0.5 # matching Redislab version
+    restart: always
+    command: [
+        "bash",
+        "-c",
+        "
+        docker-entrypoint.sh
+        --requirepass rmc
+        ",
+      ]
+    ports:
+      - 6379:6379
+
+  api:
+    container_name: api
+    depends_on:
+      - postgres
+      - redis
+      - rabbit
+    image: golang:1.15.3-alpine
+    volumes:
+      - .:/go/src/rmc
+    working_dir: /go/src/rmc
+    command: go run ./cmd/api
+    ports:
+      - 42069:42069

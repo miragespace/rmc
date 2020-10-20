@@ -20,8 +20,16 @@ import (
 )
 
 func main() {
+	var authEnvironment auth.Environment
+	env := os.Getenv("API_ENV")
+	if "" == env {
+		env = "development"
+		authEnvironment = auth.EnvDevelopment
+	} else {
+		authEnvironment = auth.EnvProduction
+	}
 
-	if err := godotenv.Load(); err != nil {
+	if err := godotenv.Load(".env." + env); err != nil {
 		panic(err)
 	}
 
@@ -46,9 +54,10 @@ func main() {
 	auth, err := auth.New(auth.Options{
 		Redis: rdb,
 
-		SMTPAuth: smtpAuth,
-		From:     os.Getenv("SMTP_FROM"),
-		Hostname: os.Getenv("SMTP_HOST") + ":" + os.Getenv("SMTP_PORT"),
+		Environment: authEnvironment,
+		SMTPAuth:    smtpAuth,
+		From:        os.Getenv("SMTP_FROM"),
+		Hostname:    os.Getenv("SMTP_HOST") + ":" + os.Getenv("SMTP_PORT"),
 		EmailOption: auth.EmailOption{
 			Name: os.Getenv("SITE_NAME"),
 			LinkGenerator: func(uid, token string) string {
@@ -94,7 +103,7 @@ func main() {
 
 	srv := &http.Server{
 		Handler: rootRouter,
-		Addr:    "127.0.0.1:42069",
+		Addr:    ":42069",
 	}
 
 	log.Fatalln(srv.ListenAndServe())
