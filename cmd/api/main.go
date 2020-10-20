@@ -14,14 +14,15 @@ import (
 	"github.com/zllovesuki/rmc/db"
 	"github.com/zllovesuki/rmc/instance"
 
+	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
-	sentryhttp "github.com/getsentry/sentry-go/http"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-redis/redis/v7"
 	"github.com/joho/godotenv"
 	"github.com/stripe/stripe-go/v71"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
@@ -47,6 +48,13 @@ func main() {
 		log.Fatalf("Cannot initialize logger: %v\n", err)
 	}
 
+	// Load configurations from dotFile
+	if err := godotenv.Load(dotFile); err != nil {
+		logger.Fatal("Cannot load configurations from .env",
+			zap.Error(err),
+		)
+	}
+
 	// Initialize sentry for error reporting
 	if err := sentry.Init(sentry.ClientOptions{
 		Environment: string(authEnvironment),
@@ -58,12 +66,15 @@ func main() {
 	}
 	defer sentry.Flush(time.Second * 2)
 
-	// Load configurations from dotFile
-	if err := godotenv.Load(dotFile); err != nil {
-		logger.Fatal("Cannot load configurations from .env",
-			zap.Error(err),
-		)
+	// Attach sentry to zap so we can do automatic error capturing
+	cfg := zapsentry.Configuration{
+		Level: zapcore.ErrorLevel,
+		Tags: map[string]string{
+			"component": "api",
+		},
 	}
+	core, err := zapsentry.NewCore(cfg, zapsentry.NewSentryClientFromClient(sentry.CurrentHub().Client()))
+	logger = zapsentry.AttachCoreToLogger(core, logger)
 
 	stripe.Key = os.Getenv("STRIPE_KEY")
 
@@ -154,13 +165,7 @@ func main() {
 	// Initialize http/middlewares
 	r := chi.NewRouter()
 
-	sentryMiddleware := sentryhttp.New(sentryhttp.Options{
-		Repanic: true,
-	})
-
 	r.Use(middleware.RequestID)
-	r.Use(middleware.Recoverer)
-	r.Use(sentryMiddleware.Handle)
 
 	r.Mount("/customers", customerRouter.Router())
 	r.Mount("/instances", instanceRouter.Router())
