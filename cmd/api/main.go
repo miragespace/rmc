@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/pprof"
 	"net/smtp"
 	"os"
 
@@ -12,8 +13,8 @@ import (
 	"github.com/zllovesuki/rmc/db"
 	"github.com/zllovesuki/rmc/instance"
 
+	"github.com/go-chi/chi"
 	"github.com/go-redis/redis/v7"
-	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 	"github.com/stripe/stripe-go/v71"
 )
@@ -77,15 +78,22 @@ func main() {
 		CustomerManager: customerManager,
 	})
 
-	router := mux.NewRouter()
+	rootRouter := chi.NewRouter()
 
-	customerRouter.Mount(router.PathPrefix("/customer").Subrouter())
-	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	rootRouter.Mount("/customer", customerRouter.Router())
+
+	rootRouter.HandleFunc("/pprof/*", pprof.Index)
+	rootRouter.HandleFunc("/pprof/cmdline", pprof.Cmdline)
+	rootRouter.HandleFunc("/pprof/profile", pprof.Profile)
+	rootRouter.HandleFunc("/pprof/symbol", pprof.Symbol)
+	rootRouter.HandleFunc("/pprof/trace", pprof.Trace)
+
+	rootRouter.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Hello World!")
 	})
 
 	srv := &http.Server{
-		Handler: router,
+		Handler: rootRouter,
 		Addr:    "127.0.0.1:42069",
 	}
 

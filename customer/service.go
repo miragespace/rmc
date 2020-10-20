@@ -5,23 +5,27 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/gorilla/mux"
+	"github.com/go-chi/chi"
 	"github.com/zllovesuki/rmc/auth"
 )
 
+// Options contains the configuration for Service router
 type Options struct {
 	Auth            *auth.Auth
 	CustomerManager *Manager
 }
 
+// Service is the customer API router
 type Service struct {
 	Option Options
 }
 
-type Request struct {
+// LoginRequest is the model of user request for login
+type LoginRequest struct {
 	Email string `json:"email"`
 }
 
+// NewService will create an instance of the customer API router
 func NewService(option Options) (*Service, error) {
 	if option.Auth == nil {
 		return nil, fmt.Errorf("nil Auth is invalid")
@@ -35,7 +39,7 @@ func NewService(option Options) (*Service, error) {
 }
 
 func (s *Service) requestLogin(w http.ResponseWriter, r *http.Request) {
-	var req Request
+	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -52,9 +56,9 @@ func (s *Service) requestLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
-	params := mux.Vars(r)
-	email := params["uid"]
-	token := params["token"]
+	ctx := r.Context()
+	email := chi.URLParam(r, "uid")
+	token := chi.URLParam(r, "token")
 
 	valid, err := s.Option.Auth.Verify(r.Context(), email, token)
 	if err != nil {
@@ -68,7 +72,7 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// "upsert" a customer
-	cust, err := s.Option.CustomerManager.GetByEmail(email)
+	cust, err := s.Option.CustomerManager.GetByEmail(ctx, email)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -76,7 +80,7 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	if cust == nil {
 		// new customer! yay
-		cust, err = s.Option.CustomerManager.NewCustomer(email)
+		cust, err = s.Option.CustomerManager.NewCustomer(ctx, email)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -89,7 +93,12 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(cust)
 }
 
-func (s *Service) Mount(r *mux.Router) {
-	r.HandleFunc("/", s.requestLogin).Methods("POST")
-	r.HandleFunc("/{uid}/{token}", s.handleLogin).Methods("GET")
+// Router will return the routes under customer API
+func (s *Service) Router() http.Handler {
+	r := chi.NewRouter()
+
+	r.Post("/", s.requestLogin)
+	r.Get("/{uid}/{token}", s.handleLogin)
+
+	return r
 }

@@ -1,6 +1,7 @@
 package customer
 
 import (
+	"context"
 	"errors"
 
 	extErrors "github.com/pkg/errors"
@@ -9,10 +10,12 @@ import (
 	"gorm.io/gorm"
 )
 
+// Manager handles the database operations relating to Customers
 type Manager struct {
 	db *gorm.DB
 }
 
+// NewManager returns a new Manager for customers
 func NewManager(db *gorm.DB) (*Manager, error) {
 	if err := db.AutoMigrate(&Customer{}); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot initilize customer.Manager")
@@ -22,8 +25,12 @@ func NewManager(db *gorm.DB) (*Manager, error) {
 	}, nil
 }
 
-func (m *Manager) NewCustomer(email string) (*Customer, error) {
+// NewCustomer will create a new customer profile in Stripe and in the database
+func (m *Manager) NewCustomer(ctx context.Context, email string) (*Customer, error) {
 	params := &stripe.CustomerParams{
+		Params: stripe.Params{
+			Context: ctx,
+		},
 		Email: stripe.String(email),
 	}
 
@@ -37,7 +44,7 @@ func (m *Manager) NewCustomer(email string) (*Customer, error) {
 		Email: email,
 	}
 
-	result := m.db.Create(newCustomer)
+	result := m.db.WithContext(ctx).Create(newCustomer)
 	if result.Error != nil {
 		return nil, extErrors.Wrap(result.Error, "Cannot create a New Customer")
 	}
@@ -45,10 +52,11 @@ func (m *Manager) NewCustomer(email string) (*Customer, error) {
 	return newCustomer, nil
 }
 
-func (m *Manager) GetByID(id string) (*Customer, error) {
+// GetByID will try to return the customer in the database by id
+func (m *Manager) GetByID(ctx context.Context, id string) (*Customer, error) {
 	var cust Customer
 
-	result := m.db.First(&cust, "id = ?", id)
+	result := m.db.WithContext(ctx).First(&cust, "id = ?", id)
 
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -61,10 +69,11 @@ func (m *Manager) GetByID(id string) (*Customer, error) {
 	return &cust, nil
 }
 
-func (m *Manager) GetByEmail(email string) (*Customer, error) {
+// GetByEmail will try to return the customer in the database by email address
+func (m *Manager) GetByEmail(ctx context.Context, email string) (*Customer, error) {
 	var cust Customer
 
-	result := m.db.First(&cust, "email = ?", email)
+	result := m.db.WithContext(ctx).First(&cust, "email = ?", email)
 
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return nil, nil
