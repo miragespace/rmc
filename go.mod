@@ -3,6 +3,7 @@ module github.com/zllovesuki/rmc
 go 1.15
 
 require (
+	github.com/getsentry/sentry-go v0.7.0
 	github.com/go-chi/chi v4.1.2+incompatible
 	github.com/go-redis/redis/v7 v7.2.0
 	github.com/johnsto/go-passwordless v0.0.0-20200616130417-d7e95aa614c8

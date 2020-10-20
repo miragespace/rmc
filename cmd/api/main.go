@@ -7,13 +7,17 @@ import (
 	"net/http/pprof"
 	"net/smtp"
 	"os"
+	"time"
 
 	"github.com/zllovesuki/rmc/auth"
 	"github.com/zllovesuki/rmc/customer"
 	"github.com/zllovesuki/rmc/db"
 	"github.com/zllovesuki/rmc/instance"
 
+	"github.com/getsentry/sentry-go"
+	sentryhttp "github.com/getsentry/sentry-go/http"
 	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 	"github.com/go-redis/redis/v7"
 	"github.com/joho/godotenv"
 	"github.com/stripe/stripe-go/v71"
@@ -26,6 +30,7 @@ func main() {
 	var dotFile string
 	var err error
 
+	// Determine running environment and initialize structural logger
 	env := os.Getenv("API_ENV")
 	if "production" == env {
 		dotFile = ".env.production"
@@ -42,6 +47,18 @@ func main() {
 		log.Fatalf("Cannot initialize logger: %v\n", err)
 	}
 
+	// Initialize sentry for error reporting
+	if err := sentry.Init(sentry.ClientOptions{
+		Environment: string(authEnvironment),
+		Debug:       authEnvironment == auth.EnvDevelopment,
+	}); err != nil {
+		logger.Fatal("Cannot initialize sentry",
+			zap.Error(err),
+		)
+	}
+	defer sentry.Flush(time.Second * 2)
+
+	// Load configurations from dotFile
 	if err := godotenv.Load(dotFile); err != nil {
 		logger.Fatal("Cannot load configurations from .env",
 			zap.Error(err),
@@ -50,6 +67,7 @@ func main() {
 
 	stripe.Key = os.Getenv("STRIPE_KEY")
 
+	// Initialize backend connections
 	db, err := db.New(os.Getenv("POSTGRES_URI"))
 	if err != nil {
 		logger.Fatal("Cannot connect to Postgres",
@@ -71,8 +89,10 @@ func main() {
 
 	rdb.Ping()
 
-	smtpAuth := smtp.PlainAuth("", os.Getenv("SMTP_USERNAME"), os.Getenv("SMTP_PASSWORD"), os.Getenv("SMTP_HOST"))
+	// TODO: Initialize RabbitMQ here
 
+	// Initialize authentication manager
+	smtpAuth := smtp.PlainAuth("", os.Getenv("SMTP_USERNAME"), os.Getenv("SMTP_PASSWORD"), os.Getenv("SMTP_HOST"))
 	auth, err := auth.New(auth.Options{
 		Redis: rdb,
 
@@ -87,13 +107,13 @@ func main() {
 			},
 		},
 	})
-
 	if err != nil {
 		logger.Error("Cannot initialize AuthManager",
 			zap.Error(err),
 		)
 	}
 
+	// Initialize Managers
 	customerManager, err := customer.NewManager(logger, db)
 	if err != nil {
 		logger.Error("Cannot initialize CustomerManager",
@@ -101,6 +121,14 @@ func main() {
 		)
 	}
 
+	instanceManager, err := instance.NewManager(logger, db)
+	if err != nil {
+		logger.Error("Cannot initialize InstanceManager",
+			zap.Error(err),
+		)
+	}
+
+	// Initialize servce routers
 	customerRouter, err := customer.NewService(customer.Options{
 		Auth:            auth,
 		CustomerManager: customerManager,
@@ -108,13 +136,6 @@ func main() {
 	})
 	if err != nil {
 		logger.Error("Cannot initialize Customer Service Router",
-			zap.Error(err),
-		)
-	}
-
-	instanceManager, err := instance.NewManager(logger, db)
-	if err != nil {
-		logger.Error("Cannot initialize InstanceManager",
 			zap.Error(err),
 		)
 	}
@@ -130,27 +151,40 @@ func main() {
 		)
 	}
 
-	rootRouter := chi.NewRouter()
+	// Initialize http/middlewares
+	r := chi.NewRouter()
 
-	rootRouter.Mount("/customers", customerRouter.Router())
-	rootRouter.Mount("/instances", instanceRouter.Router())
+	sentryMiddleware := sentryhttp.New(sentryhttp.Options{
+		Repanic: true,
+	})
 
-	rootRouter.HandleFunc("/pprof/*", pprof.Index)
-	rootRouter.HandleFunc("/pprof/cmdline", pprof.Cmdline)
-	rootRouter.HandleFunc("/pprof/profile", pprof.Profile)
-	rootRouter.HandleFunc("/pprof/symbol", pprof.Symbol)
-	rootRouter.HandleFunc("/pprof/trace", pprof.Trace)
+	r.Use(middleware.RequestID)
+	r.Use(middleware.Recoverer)
+	r.Use(sentryMiddleware.Handle)
 
-	rootRouter.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	r.Mount("/customers", customerRouter.Router())
+	r.Mount("/instances", instanceRouter.Router())
+
+	// For application insights
+	r.HandleFunc("/pprof/*", pprof.Index)
+	r.HandleFunc("/pprof/cmdline", pprof.Cmdline)
+	r.HandleFunc("/pprof/profile", pprof.Profile)
+	r.HandleFunc("/pprof/symbol", pprof.Symbol)
+	r.HandleFunc("/pprof/trace", pprof.Trace)
+
+	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// TODO: redirect user to frontend
 		fmt.Fprintf(w, "Hello World!")
 	})
 
 	srv := &http.Server{
-		Handler: rootRouter,
+		Handler: r,
 		Addr:    ":42069",
 	}
 
-	log.Fatalln(srv.ListenAndServe())
-
+	if err := srv.ListenAndServe(); err != nil {
+		logger.Fatal("Unable to listen for request",
+			zap.Error(srv.ListenAndServe()),
+		)
+	}
 }

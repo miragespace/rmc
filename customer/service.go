@@ -6,10 +6,14 @@ import (
 	"net/http"
 
 	"github.com/zllovesuki/rmc/auth"
-	"go.uber.org/zap"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/go-chi/chi"
+	"github.com/go-playground/validator/v10"
+	"go.uber.org/zap"
 )
+
+var validate *validator.Validate
 
 // Options contains the configuration for Service router
 type Options struct {
@@ -25,7 +29,7 @@ type Service struct {
 
 // LoginRequest is the model of user request for login
 type LoginRequest struct {
-	Email string `json:"email"`
+	Email string `json:"email" validate:"required,email"`
 }
 
 // NewService will create an instance of the customer API router
@@ -50,11 +54,16 @@ func (s *Service) requestLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	logger := s.Option.Logger.With(zap.String("email", req.Email))
 
-	// TODO: check if email is valid
+	if err := validate.Struct(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	if err := s.Option.Auth.Request(r.Context(), req.Email, req.Email); err != nil {
-		s.Option.Logger.Error("Unable to send login PIN",
+		sentry.GetHubFromContext(r.Context()).CaptureException(err)
+		logger.Error("Unable to send login PIN",
 			zap.Error(err),
 		)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -69,9 +78,12 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	email := chi.URLParam(r, "uid")
 	token := chi.URLParam(r, "token")
 
+	logger := s.Option.Logger.With(zap.String("email", email))
+
 	valid, err := s.Option.Auth.Verify(r.Context(), email, token)
 	if err != nil {
-		s.Option.Logger.Error("Unable to verify login PIN",
+		sentry.GetHubFromContext(r.Context()).CaptureException(err)
+		logger.Error("Unable to verify login PIN",
 			zap.Error(err),
 		)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -86,7 +98,8 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// "upsert" a customer
 	cust, err := s.Option.CustomerManager.GetByEmail(ctx, email)
 	if err != nil {
-		s.Option.Logger.Error("Unable to create Customer",
+		sentry.GetHubFromContext(r.Context()).CaptureException(err)
+		logger.Error("Unable to create Customer",
 			zap.Error(err),
 		)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -97,7 +110,8 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// new customer! yay
 		cust, err = s.Option.CustomerManager.NewCustomer(ctx, email)
 		if err != nil {
-			s.Option.Logger.Error("Unable to create Customer",
+			sentry.GetHubFromContext(r.Context()).CaptureException(err)
+			logger.Error("Unable to create Customer",
 				zap.Error(err),
 			)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
