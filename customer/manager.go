@@ -7,21 +7,24 @@ import (
 	extErrors "github.com/pkg/errors"
 	"github.com/stripe/stripe-go/v71"
 	"github.com/stripe/stripe-go/v71/customer"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Manager handles the database operations relating to Customers
 type Manager struct {
-	db *gorm.DB
+	db     *gorm.DB
+	logger *zap.Logger
 }
 
 // NewManager returns a new Manager for customers
-func NewManager(db *gorm.DB) (*Manager, error) {
+func NewManager(logger *zap.Logger, db *gorm.DB) (*Manager, error) {
 	if err := db.AutoMigrate(&Customer{}); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot initilize customer.Manager")
 	}
 	return &Manager{
-		db: db,
+		db:     db,
+		logger: logger,
 	}, nil
 }
 
@@ -36,6 +39,9 @@ func (m *Manager) NewCustomer(ctx context.Context, email string) (*Customer, err
 
 	c, err := customer.New(params)
 	if err != nil {
+		m.logger.Error("Stripe returned error",
+			zap.Error(err),
+		)
 		return nil, extErrors.Wrap(err, "Cannot create a new Customer")
 	}
 
@@ -46,6 +52,9 @@ func (m *Manager) NewCustomer(ctx context.Context, email string) (*Customer, err
 
 	result := m.db.WithContext(ctx).Create(newCustomer)
 	if result.Error != nil {
+		m.logger.Error("Database returned error",
+			zap.Error(result.Error),
+		)
 		return nil, extErrors.Wrap(result.Error, "Cannot create a New Customer")
 	}
 
@@ -63,6 +72,9 @@ func (m *Manager) GetByID(ctx context.Context, id string) (*Customer, error) {
 	}
 
 	if result.Error != nil {
+		m.logger.Error("Database returned error",
+			zap.Error(result.Error),
+		)
 		return nil, extErrors.Wrap(result.Error, "Cannot get customer by id")
 	}
 
@@ -80,6 +92,9 @@ func (m *Manager) GetByEmail(ctx context.Context, email string) (*Customer, erro
 	}
 
 	if result.Error != nil {
+		m.logger.Error("Database returned error",
+			zap.Error(result.Error),
+		)
 		return nil, extErrors.Wrap(result.Error, "Cannot get customer by email")
 	}
 

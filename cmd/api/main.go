@@ -17,27 +17,44 @@ import (
 	"github.com/go-redis/redis/v7"
 	"github.com/joho/godotenv"
 	"github.com/stripe/stripe-go/v71"
+	"go.uber.org/zap"
 )
 
 func main() {
+	var logger *zap.Logger
 	var authEnvironment auth.Environment
+	var dotFile string
+	var err error
+
 	env := os.Getenv("API_ENV")
-	if "" == env {
-		env = "development"
-		authEnvironment = auth.EnvDevelopment
-	} else {
+	if "production" == env {
+		dotFile = ".env.production"
 		authEnvironment = auth.EnvProduction
+		logger, err = zap.NewProduction()
+	} else {
+		dotFile = ".env.development"
+		authEnvironment = auth.EnvDevelopment
+		logger, err = zap.NewDevelopment()
+	}
+	defer logger.Sync()
+
+	if err != nil {
+		log.Fatalf("Cannot initialize logger: %v\n", err)
 	}
 
-	if err := godotenv.Load(".env." + env); err != nil {
-		panic(err)
+	if err := godotenv.Load(dotFile); err != nil {
+		logger.Fatal("Cannot load configurations from .env",
+			zap.Error(err),
+		)
 	}
 
 	stripe.Key = os.Getenv("STRIPE_KEY")
 
 	db, err := db.New(os.Getenv("POSTGRES_URI"))
 	if err != nil {
-		panic(err)
+		logger.Fatal("Cannot connect to Postgres",
+			zap.Error(err),
+		)
 	}
 
 	rdb := redis.NewUniversalClient(&redis.UniversalOptions{
@@ -45,6 +62,11 @@ func main() {
 		Password: os.Getenv("REDIS_PW"),
 		DB:       0,
 	})
+	if _, err := rdb.Ping().Result(); err != nil {
+		logger.Fatal("Cannot connect to Redis",
+			zap.Error(err),
+		)
+	}
 	defer rdb.Close()
 
 	rdb.Ping()
@@ -67,29 +89,51 @@ func main() {
 	})
 
 	if err != nil {
-		panic(err)
+		logger.Error("Cannot initialize AuthManager",
+			zap.Error(err),
+		)
 	}
 
-	customerManager, err := customer.NewManager(db)
+	customerManager, err := customer.NewManager(logger, db)
 	if err != nil {
-		panic(err)
+		logger.Error("Cannot initialize CustomerManager",
+			zap.Error(err),
+		)
 	}
-
-	instanceManager, err := instance.NewManager(db)
-	if err != nil {
-		panic(err)
-	}
-
-	log.Println(instanceManager)
 
 	customerRouter, err := customer.NewService(customer.Options{
 		Auth:            auth,
 		CustomerManager: customerManager,
+		Logger:          logger,
 	})
+	if err != nil {
+		logger.Error("Cannot initialize Customer Service Router",
+			zap.Error(err),
+		)
+	}
+
+	instanceManager, err := instance.NewManager(logger, db)
+	if err != nil {
+		logger.Error("Cannot initialize InstanceManager",
+			zap.Error(err),
+		)
+	}
+
+	instanceRouter, err := instance.NewService(instance.Options{
+		Auth:            auth,
+		InstanceManager: instanceManager,
+		Logger:          logger,
+	})
+	if err != nil {
+		logger.Error("Cannot initialize Instance Service Router",
+			zap.Error(err),
+		)
+	}
 
 	rootRouter := chi.NewRouter()
 
-	rootRouter.Mount("/customer", customerRouter.Router())
+	rootRouter.Mount("/customers", customerRouter.Router())
+	rootRouter.Mount("/instances", instanceRouter.Router())
 
 	rootRouter.HandleFunc("/pprof/*", pprof.Index)
 	rootRouter.HandleFunc("/pprof/cmdline", pprof.Cmdline)
@@ -98,6 +142,7 @@ func main() {
 	rootRouter.HandleFunc("/pprof/trace", pprof.Trace)
 
 	rootRouter.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// TODO: redirect user to frontend
 		fmt.Fprintf(w, "Hello World!")
 	})
 

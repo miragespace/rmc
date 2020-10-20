@@ -9,6 +9,7 @@ require (
 	github.com/joho/godotenv v1.3.0
 	github.com/pkg/errors v0.8.1
 	github.com/stripe/stripe-go/v71 v71.48.0
+	go.uber.org/zap v1.10.0
 	gorm.io/driver/postgres v1.0.2
 	gorm.io/gorm v1.20.2
 )

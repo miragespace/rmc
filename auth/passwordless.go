@@ -11,15 +11,6 @@ import (
 	"github.com/johnsto/go-passwordless"
 )
 
-// Environment is the type for defining the running environment
-type Environment string
-
-// define constants
-const (
-	EnvDevelopment Environment = "Dev"
-	EnvProduction  Environment = "Prod"
-)
-
 // Options provides initialization parameters for Auth
 type Options struct {
 	Redis redis.UniversalClient
@@ -39,12 +30,6 @@ type EmailOption struct {
 
 // LinkGenerator is used to generator a login link
 type LinkGenerator func(uid, token string) string
-
-// Auth provides passwordless authentication
-type Auth struct {
-	pw      *passwordless.Passwordless
-	options Options
-}
 
 func (o *Options) validate() error {
 	if o == nil {
@@ -128,14 +113,14 @@ func composeFuncGetter(options EmailOption) passwordless.ComposerFunc {
 
 		text := "You (or someone who knows your email address) wants " +
 			"to sign in to " + options.Name + ".\n\n" +
-			"Your PIN is " + token + " - or use the following link: " +
+			"Your token (expires in 15 minutes) is " + token + " - or use the following link: " +
 			link + "\n\n" +
 			"(If you were did not request or were not expecting this email, " +
 			"you can safely ignore it.)"
 		html := "<!doctype html><html><body>" +
 			"<p>You (or someone who knows your email address) wants " +
 			"to sign in to " + options.Name + ".</p>" +
-			"<p>Your PIN is <b>" + token + "</b> - or <a href=\"" + link + "\">" +
+			"<p>Your token (expires in 15 minutes) is <b>" + token + "</b> - or <a href=\"" + link + "\">" +
 			"click here</a> to sign in automatically.</p>" +
 			"<p>(If you did not request or were not expecting this email, " +
 			"you can safely ignore it.)</p></body></html>"

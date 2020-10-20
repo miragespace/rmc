@@ -5,14 +5,17 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/go-chi/chi"
 	"github.com/zllovesuki/rmc/auth"
+	"go.uber.org/zap"
+
+	"github.com/go-chi/chi"
 )
 
 // Options contains the configuration for Service router
 type Options struct {
 	Auth            *auth.Auth
 	CustomerManager *Manager
+	Logger          *zap.Logger
 }
 
 // Service is the customer API router
@@ -33,6 +36,9 @@ func NewService(option Options) (*Service, error) {
 	if option.CustomerManager == nil {
 		return nil, fmt.Errorf("nil CustomerManager is invalid")
 	}
+	if option.Logger == nil {
+		return nil, fmt.Errorf("nil Logger is invalid")
+	}
 	return &Service{
 		Option: option,
 	}, nil
@@ -48,6 +54,9 @@ func (s *Service) requestLogin(w http.ResponseWriter, r *http.Request) {
 	// TODO: check if email is valid
 
 	if err := s.Option.Auth.Request(r.Context(), req.Email, req.Email); err != nil {
+		s.Option.Logger.Error("Unable to send login PIN",
+			zap.Error(err),
+		)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -62,6 +71,9 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	valid, err := s.Option.Auth.Verify(r.Context(), email, token)
 	if err != nil {
+		s.Option.Logger.Error("Unable to verify login PIN",
+			zap.Error(err),
+		)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -74,6 +86,9 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// "upsert" a customer
 	cust, err := s.Option.CustomerManager.GetByEmail(ctx, email)
 	if err != nil {
+		s.Option.Logger.Error("Unable to create Customer",
+			zap.Error(err),
+		)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -82,6 +97,9 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// new customer! yay
 		cust, err = s.Option.CustomerManager.NewCustomer(ctx, email)
 		if err != nil {
+			s.Option.Logger.Error("Unable to create Customer",
+				zap.Error(err),
+			)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
