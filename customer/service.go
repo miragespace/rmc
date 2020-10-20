@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 )
 
-var validate *validator.Validate
+var validate *validator.Validate = validator.New()
 
 // Options contains the configuration for Service router
 type Options struct {
@@ -56,7 +56,7 @@ func (s *Service) requestLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	logger := s.Option.Logger.With(zap.String("email", req.Email))
 
-	if err := validate.Struct(req); err != nil {
+	if err := validate.Struct(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -91,7 +91,7 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !valid {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		http.Error(w, "not authorized", http.StatusUnauthorized)
 		return
 	}
 

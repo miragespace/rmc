@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/smtp"
@@ -99,7 +100,14 @@ func (a *Auth) Request(ctx context.Context, uid, recipient string) error {
 
 // Verify checks if the login token is valid and corresonds to the user
 func (a *Auth) Verify(ctx context.Context, uid, token string) (bool, error) {
-	return a.pw.VerifyToken(ctx, uid, token)
+	valid, err := a.pw.VerifyToken(ctx, uid, token)
+	if errors.Is(err, passwordless.ErrNoResponseWriter) ||
+		errors.Is(err, passwordless.ErrNoStore) ||
+		errors.Is(err, passwordless.ErrNoTransport) ||
+		errors.Is(err, passwordless.ErrNotValidForContext) {
+		return valid, err
+	}
+	return valid, nil
 }
 
 func composeFuncGetter(options EmailOption) passwordless.ComposerFunc {
