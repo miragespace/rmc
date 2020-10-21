@@ -17,7 +17,7 @@ import (
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
 	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/cors"
 	"github.com/go-redis/redis/v7"
 	"github.com/joho/godotenv"
 	"github.com/stripe/stripe-go/v71"
@@ -105,7 +105,10 @@ func main() {
 	// Initialize authentication manager
 	smtpAuth := smtp.PlainAuth("", os.Getenv("SMTP_USERNAME"), os.Getenv("SMTP_PASSWORD"), os.Getenv("SMTP_HOST"))
 	auth, err := auth.New(auth.Options{
-		Redis: rdb,
+		Redis:  rdb,
+		Logger: logger,
+
+		JWTSigningKey: os.Getenv("JWT_KEY"),
 
 		Environment: authEnvironment,
 		SMTPAuth:    smtpAuth,
@@ -114,7 +117,7 @@ func main() {
 		EmailOption: auth.EmailOption{
 			Name: os.Getenv("SITE_NAME"),
 			LinkGenerator: func(uid, token string) string {
-				return fmt.Sprintf("%s/customer/%s/%s", os.Getenv("SITE_URL"), uid, token)
+				return fmt.Sprintf("%s/customers/%s/%s", os.Getenv("SITE_URL"), uid, token)
 			},
 		},
 	})
@@ -165,10 +168,20 @@ func main() {
 	// Initialize http/middlewares
 	r := chi.NewRouter()
 
-	r.Use(middleware.RequestID)
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
 
 	r.Mount("/customers", customerRouter.Router())
-	r.Mount("/instances", instanceRouter.Router())
+
+	authMiddleware := chi.Chain(auth.Middleware())
+	authenticated := r.With(authMiddleware...)
+
+	authenticated.Mount("/instances", instanceRouter.Router())
 
 	// For application insights
 	r.HandleFunc("/pprof/*", pprof.Index)

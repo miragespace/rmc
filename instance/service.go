@@ -19,7 +19,7 @@ type Options struct {
 
 // Service is the instance API router
 type Service struct {
-	Option Options
+	Options
 }
 
 func NewService(option Options) (*Service, error) {
@@ -33,12 +33,16 @@ func NewService(option Options) (*Service, error) {
 		return nil, fmt.Errorf("nil Logger is invalid")
 	}
 	return &Service{
-		Option: option,
+		Options: option,
 	}, nil
 }
 
 func (s *Service) Router() http.Handler {
 	r := chi.NewRouter()
+
+	r.Get("/test", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "this is a test for jwt token.")
+	})
 
 	return r
 }

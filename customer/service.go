@@ -23,10 +23,10 @@ type Options struct {
 
 // Service is the customer API router
 type Service struct {
-	Option Options
+	Options
 }
 
-// LoginRequest is the model of user request for login
+// LoginRequest is the model of user request for login pin
 type LoginRequest struct {
 	Email string `json:"email" validate:"required,email"`
 }
@@ -43,7 +43,7 @@ func NewService(option Options) (*Service, error) {
 		return nil, fmt.Errorf("nil Logger is invalid")
 	}
 	return &Service{
-		Option: option,
+		Options: option,
 	}, nil
 }
 
@@ -53,14 +53,14 @@ func (s *Service) requestLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	logger := s.Option.Logger.With(zap.String("email", req.Email))
+	logger := s.Logger.With(zap.String("email", req.Email))
 
 	if err := validate.Struct(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if err := s.Option.Auth.Request(r.Context(), req.Email, req.Email); err != nil {
+	if err := s.Auth.Request(r.Context(), req.Email, req.Email); err != nil {
 		logger.Error("Unable to send login PIN",
 			zap.Error(err),
 		)
@@ -76,9 +76,9 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	email := chi.URLParam(r, "uid")
 	token := chi.URLParam(r, "token")
 
-	logger := s.Option.Logger.With(zap.String("email", email))
+	logger := s.Logger.With(zap.String("email", email))
 
-	valid, err := s.Option.Auth.Verify(r.Context(), email, token)
+	valid, err := s.Auth.Verify(r.Context(), email, token)
 	if err != nil {
 		logger.Error("Unable to verify login PIN",
 			zap.Error(err),
@@ -93,7 +93,7 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// "upsert" a customer
-	cust, err := s.Option.CustomerManager.GetByEmail(ctx, email)
+	cust, err := s.CustomerManager.GetByEmail(ctx, email)
 	if err != nil {
 		logger.Error("Unable to create Customer",
 			zap.Error(err),
@@ -104,7 +104,7 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	if cust == nil {
 		// new customer! yay
-		cust, err = s.Option.CustomerManager.NewCustomer(ctx, email)
+		cust, err = s.CustomerManager.NewCustomer(ctx, email)
 		if err != nil {
 			logger.Error("Unable to create Customer",
 				zap.Error(err),
@@ -114,10 +114,24 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// TODO: Generate TTL token
+	jwtToken, err := s.Auth.CreateTokenFromClaims(auth.Claims{
+		ID:    cust.ID,
+		Email: cust.Email,
+	})
+	if err != nil {
+		logger.Error("Unable to generate token",
+			zap.Error(err),
+		)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Add("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(cust)
+	json.NewEncoder(w).Encode(struct {
+		Token string `json:"token"`
+	}{
+		Token: jwtToken,
+	})
 }
 
 // Router will return the routes under customer API
@@ -126,10 +140,6 @@ func (s *Service) Router() http.Handler {
 
 	r.Post("/", s.requestLogin)
 	r.Get("/{uid}/{token}", s.handleLogin)
-	r.Get("/error", func(w http.ResponseWriter, r *http.Request) {
-		s.Option.Logger.Error("oh no")
-		http.Error(w, "oh no", http.StatusInternalServerError)
-	})
 
 	return r
 }

@@ -2,92 +2,13 @@ package auth
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
-	"net/smtp"
-	"time"
 
-	"github.com/go-redis/redis/v7"
 	"github.com/johnsto/go-passwordless"
 )
 
-// Options provides initialization parameters for Auth
-type Options struct {
-	Redis redis.UniversalClient
-
-	Environment Environment
-	SMTPAuth    smtp.Auth
-	From        string
-	Hostname    string
-	EmailOption EmailOption
-}
-
-// EmailOption specifies the name shown in the email, and the LinkGenerator for the login link
-type EmailOption struct {
-	Name          string
-	LinkGenerator LinkGenerator
-}
-
-// LinkGenerator is used to generator a login link
-type LinkGenerator func(uid, token string) string
-
-func (o *Options) validate() error {
-	if o == nil {
-		return fmt.Errorf("nil option is invalid")
-	}
-	if o.Redis == nil {
-		return fmt.Errorf("nil redisClient is invalid")
-	}
-	if o.SMTPAuth == nil {
-		return fmt.Errorf("nil SMTPAuth is invalid")
-	}
-	if o.From == "" {
-		return fmt.Errorf("Empty from is invalid")
-	}
-	if o.Hostname == "" {
-		return fmt.Errorf("Empty hostname is invalid")
-	}
-	if o.EmailOption.Name == "" {
-		return fmt.Errorf("Empty EmailOption.Name is invalid")
-	}
-	if o.EmailOption.LinkGenerator == nil {
-		return fmt.Errorf("nil EmailOption.LinkGenerator is invalid")
-	}
-	if o.Environment == "" {
-		o.Environment = EnvDevelopment
-	}
-
-	return nil
-}
-
-// New will return a new instance of Auth for authentication
-func New(option Options) (*Auth, error) {
-	if err := option.validate(); err != nil {
-		return nil, err
-	}
-
-	pw := passwordless.New(passwordless.NewRedisStore(option.Redis))
-	pw.SetTransport("Log", passwordless.LogTransport{
-		MessageFunc: func(token, uid string) string {
-			return option.EmailOption.LinkGenerator(uid, token)
-		},
-	}, passwordless.NewCrockfordGenerator(8), time.Minute*30)
-	pw.SetTransport("Email", passwordless.NewSMTPTransport(
-		option.Hostname,
-		option.From,
-		option.SMTPAuth,
-		composeFuncGetter(option.EmailOption),
-	), passwordless.NewCrockfordGenerator(32), time.Minute*15)
-
-	return &Auth{
-		pw:      pw,
-		options: option,
-	}, nil
-}
-
 func (a *Auth) getTransport() string {
-	if a.options.Environment == EnvProduction {
+	if a.Environment == EnvProduction {
 		return "Email"
 	}
 	return "Log"
@@ -101,13 +22,12 @@ func (a *Auth) Request(ctx context.Context, uid, recipient string) error {
 // Verify checks if the login token is valid and corresonds to the user
 func (a *Auth) Verify(ctx context.Context, uid, token string) (bool, error) {
 	valid, err := a.pw.VerifyToken(ctx, uid, token)
-	if errors.Is(err, passwordless.ErrNoResponseWriter) ||
-		errors.Is(err, passwordless.ErrNoStore) ||
-		errors.Is(err, passwordless.ErrNoTransport) ||
-		errors.Is(err, passwordless.ErrNotValidForContext) {
+	switch err {
+	case passwordless.ErrNoResponseWriter, passwordless.ErrNoStore, passwordless.ErrNoTransport, passwordless.ErrNotValidForContext:
 		return valid, err
+	default:
+		return valid, nil
 	}
-	return valid, nil
 }
 
 func composeFuncGetter(options EmailOption) passwordless.ComposerFunc {
