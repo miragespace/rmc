@@ -4,6 +4,10 @@ services:
     container_name: rmc-rabbitmq
     image: rabbitmq:3.8.8-management # matching CloudAMQP version
     restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: rmc
+      RABBITMQ_DEFAULT_PASS: rmc
+      RABBITMQ_DEFAULT_VHOST: rmc
     ports:
       - 5672:5672
       - 15672:15672
@@ -45,5 +49,6 @@ services:
       - .:/go/src/rmc
     working_dir: /go/src/rmc
     command: go run ./cmd/api
+    restart: always
     ports:
       - 42069:42069

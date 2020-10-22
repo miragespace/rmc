@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/http/pprof"
 	"net/smtp"
 	"os"
 	"time"
 
 	"github.com/zllovesuki/rmc/auth"
+	"github.com/zllovesuki/rmc/broker"
 	"github.com/zllovesuki/rmc/customer"
 	"github.com/zllovesuki/rmc/db"
 	"github.com/zllovesuki/rmc/host"
@@ -18,6 +18,7 @@ import (
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
 	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/cors"
 	"github.com/go-redis/redis/v7"
 	"github.com/joho/godotenv"
@@ -101,7 +102,12 @@ func main() {
 
 	rdb.Ping()
 
-	// TODO: Initialize RabbitMQ here
+	amqpBroker, err := broker.NewAMQPBroker(os.Getenv("AMQP_URI"))
+	if err != nil {
+		log.Fatal("Cannot connect to Broker",
+			zap.Error(err),
+		)
+	}
 
 	// Initialize authentication manager
 	smtpAuth := smtp.PlainAuth("", os.Getenv("SMTP_USERNAME"), os.Getenv("SMTP_PASSWORD"), os.Getenv("SMTP_HOST"))
@@ -166,6 +172,7 @@ func main() {
 		Auth:            auth,
 		HostManager:     hostManager,
 		InstanceManager: instanceManager,
+		Broker:          amqpBroker,
 		Logger:          logger,
 	})
 	if err != nil {
@@ -193,11 +200,7 @@ func main() {
 	authenticated.Mount("/instances", instanceRouter.Router())
 
 	// For application insights
-	r.HandleFunc("/pprof/*", pprof.Index)
-	r.HandleFunc("/pprof/cmdline", pprof.Cmdline)
-	r.HandleFunc("/pprof/profile", pprof.Profile)
-	r.HandleFunc("/pprof/symbol", pprof.Symbol)
-	r.HandleFunc("/pprof/trace", pprof.Trace)
+	r.Mount("/debug", middleware.Profiler())
 
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// TODO: redirect user to frontend
