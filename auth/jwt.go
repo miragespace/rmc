@@ -30,6 +30,9 @@ func (a *Auth) verifyToken(token string) (*Claims, error) {
 		if err == jwt.ErrSignatureInvalid {
 			return nil, nil
 		}
+		if _, ok := err.(*jwt.ValidationError); ok {
+			return nil, nil
+		}
 		return nil, err
 	}
 	if !jwtToken.Valid {

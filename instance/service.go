@@ -227,7 +227,15 @@ func (s *Service) Router() http.Handler {
 	r.Post("/", s.newInstance)
 	r.Delete("/{id}", s.deleteInstance)
 	r.Get("/test", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "this is a test for jwt token.")
+		ctx := r.Context()
+
+		claims, ok := ctx.Value(auth.Context).(*auth.Claims)
+		if !ok {
+			s.Logger.Error("Context has no Claims")
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		fmt.Fprintf(w, "this is a test for jwt token. CustomerID: "+claims.ID)
 	})
 
 	return r
