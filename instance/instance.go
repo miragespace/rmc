@@ -8,7 +8,7 @@ type Instance struct {
 	HostName       string `json:"hostName"`                      // Defines which host the server runs on
 	ServerAddr     string `json:"serverAddr"`                    // Minecraft server host IP
 	ServerPort     int    `json:"serverPort"`                    // Minecraft server port
-	ServerVersion  string `json:"version"`                       // Minecraft server version
+	ServerVersion  string `json:"serverVersion"`                 // Minecraft server version
 	IsJavaEdition  bool   `json:"isJavaEdition"`                 // Minecraft server edition (Java/Bedrock)
 	State          string `json:"state"`                         // Starting/Stopping/Started/Stopped/Unknown/Provisioning
 	Status         string `json:"status"`                        // Active/Terminated

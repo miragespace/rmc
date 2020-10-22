@@ -1,6 +1,10 @@
 package host
 
 import (
+	"context"
+
+	"github.com/zllovesuki/rmc/spec"
+
 	extErrors "github.com/pkg/errors"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -23,10 +27,14 @@ func NewManager(logger *zap.Logger, db *gorm.DB) (*Manager, error) {
 	}, nil
 }
 
-func (m *Manager) NextAvailableHost() (*Host, error) {
+func (m *Manager) GetHostByName(ctx context.Context, name string) (*Host, error) {
 	panic("not implemented")
 }
 
-func (m *Manager) Heartbeat() error {
+func (m *Manager) NextAvailableHost(ctx context.Context) (*Host, error) {
+	panic("not implemented")
+}
+
+func (m *Manager) ProcessHeartbeat(ctx context.Context, p *spec.Heartbeat) error {
 	panic("not implemented")
 }

@@ -10,7 +10,7 @@ type Host struct {
 	LastHeartbeat time.Time
 }
 
-// Exchange returns a deterministic exchange name for use in Message Broker
-func (h *Host) Exchange() string {
-	return "exchange-" + h.Name
+// RoutingKey will return a deterministic routing key for message broker
+func (h *Host) RoutingKey() string {
+	return "worker-" + h.Name
 }
