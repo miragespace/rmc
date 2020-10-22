@@ -3,7 +3,7 @@ package spec;
 
 message Host {
     string Name = 1;
-    int Load = 2;
+    int64 Load = 2;
 }
 
 message Heartbeat {

@@ -1,0 +1,11 @@
+FROM golang:1.15.3-alpine
+
+RUN apk update
+RUN apk add protoc git
+RUN go get -u github.com/golang/protobuf/protoc-gen-go
+
+RUN mkdir /proto
+
+WORKDIR /proto
+
+ENTRYPOINT ["protoc"]
