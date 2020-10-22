@@ -118,101 +118,101 @@ func (ControlReply_ControlResult) EnumDescriptor() ([]byte, []int) {
 	return file_spec_instance_proto_rawDescGZIP(), []int{2, 0}
 }
 
-type InstanceProvisionRequest_ProvisionAction int32
+type ProvisionRequest_ProvisionAction int32
 
 const (
-	InstanceProvisionRequest_UNKNOWN InstanceProvisionRequest_ProvisionAction = 0
-	InstanceProvisionRequest_CREATE  InstanceProvisionRequest_ProvisionAction = 1
-	InstanceProvisionRequest_DELETE  InstanceProvisionRequest_ProvisionAction = 2
+	ProvisionRequest_UNKNOWN ProvisionRequest_ProvisionAction = 0
+	ProvisionRequest_CREATE  ProvisionRequest_ProvisionAction = 1
+	ProvisionRequest_DELETE  ProvisionRequest_ProvisionAction = 2
 )
 
-// Enum value maps for InstanceProvisionRequest_ProvisionAction.
+// Enum value maps for ProvisionRequest_ProvisionAction.
 var (
-	InstanceProvisionRequest_ProvisionAction_name = map[int32]string{
+	ProvisionRequest_ProvisionAction_name = map[int32]string{
 		0: "UNKNOWN",
 		1: "CREATE",
 		2: "DELETE",
 	}
-	InstanceProvisionRequest_ProvisionAction_value = map[string]int32{
+	ProvisionRequest_ProvisionAction_value = map[string]int32{
 		"UNKNOWN": 0,
 		"CREATE":  1,
 		"DELETE":  2,
 	}
 )
 
-func (x InstanceProvisionRequest_ProvisionAction) Enum() *InstanceProvisionRequest_ProvisionAction {
-	p := new(InstanceProvisionRequest_ProvisionAction)
+func (x ProvisionRequest_ProvisionAction) Enum() *ProvisionRequest_ProvisionAction {
+	p := new(ProvisionRequest_ProvisionAction)
 	*p = x
 	return p
 }
 
-func (x InstanceProvisionRequest_ProvisionAction) String() string {
+func (x ProvisionRequest_ProvisionAction) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (InstanceProvisionRequest_ProvisionAction) Descriptor() protoreflect.EnumDescriptor {
+func (ProvisionRequest_ProvisionAction) Descriptor() protoreflect.EnumDescriptor {
 	return file_spec_instance_proto_enumTypes[2].Descriptor()
 }
 
-func (InstanceProvisionRequest_ProvisionAction) Type() protoreflect.EnumType {
+func (ProvisionRequest_ProvisionAction) Type() protoreflect.EnumType {
 	return &file_spec_instance_proto_enumTypes[2]
 }
 
-func (x InstanceProvisionRequest_ProvisionAction) Number() protoreflect.EnumNumber {
+func (x ProvisionRequest_ProvisionAction) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use InstanceProvisionRequest_ProvisionAction.Descriptor instead.
-func (InstanceProvisionRequest_ProvisionAction) EnumDescriptor() ([]byte, []int) {
+// Deprecated: Use ProvisionRequest_ProvisionAction.Descriptor instead.
+func (ProvisionRequest_ProvisionAction) EnumDescriptor() ([]byte, []int) {
 	return file_spec_instance_proto_rawDescGZIP(), []int{3, 0}
 }
 
-type InstanceProvisionReply_ProvisionResult int32
+type ProvisionReply_ProvisionResult int32
 
 const (
-	InstanceProvisionReply_UNKNOWN InstanceProvisionReply_ProvisionResult = 0
-	InstanceProvisionReply_SUCCESS InstanceProvisionReply_ProvisionResult = 1
-	InstanceProvisionReply_FAILURE InstanceProvisionReply_ProvisionResult = 2
+	ProvisionReply_UNKNOWN ProvisionReply_ProvisionResult = 0
+	ProvisionReply_SUCCESS ProvisionReply_ProvisionResult = 1
+	ProvisionReply_FAILURE ProvisionReply_ProvisionResult = 2
 )
 
-// Enum value maps for InstanceProvisionReply_ProvisionResult.
+// Enum value maps for ProvisionReply_ProvisionResult.
 var (
-	InstanceProvisionReply_ProvisionResult_name = map[int32]string{
+	ProvisionReply_ProvisionResult_name = map[int32]string{
 		0: "UNKNOWN",
 		1: "SUCCESS",
 		2: "FAILURE",
 	}
-	InstanceProvisionReply_ProvisionResult_value = map[string]int32{
+	ProvisionReply_ProvisionResult_value = map[string]int32{
 		"UNKNOWN": 0,
 		"SUCCESS": 1,
 		"FAILURE": 2,
 	}
 )
 
-func (x InstanceProvisionReply_ProvisionResult) Enum() *InstanceProvisionReply_ProvisionResult {
-	p := new(InstanceProvisionReply_ProvisionResult)
+func (x ProvisionReply_ProvisionResult) Enum() *ProvisionReply_ProvisionResult {
+	p := new(ProvisionReply_ProvisionResult)
 	*p = x
 	return p
 }
 
-func (x InstanceProvisionReply_ProvisionResult) String() string {
+func (x ProvisionReply_ProvisionResult) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (InstanceProvisionReply_ProvisionResult) Descriptor() protoreflect.EnumDescriptor {
+func (ProvisionReply_ProvisionResult) Descriptor() protoreflect.EnumDescriptor {
 	return file_spec_instance_proto_enumTypes[3].Descriptor()
 }
 
-func (InstanceProvisionReply_ProvisionResult) Type() protoreflect.EnumType {
+func (ProvisionReply_ProvisionResult) Type() protoreflect.EnumType {
 	return &file_spec_instance_proto_enumTypes[3]
 }
 
-func (x InstanceProvisionReply_ProvisionResult) Number() protoreflect.EnumNumber {
+func (x ProvisionReply_ProvisionResult) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use InstanceProvisionReply_ProvisionResult.Descriptor instead.
-func (InstanceProvisionReply_ProvisionResult) EnumDescriptor() ([]byte, []int) {
+// Deprecated: Use ProvisionReply_ProvisionResult.Descriptor instead.
+func (ProvisionReply_ProvisionResult) EnumDescriptor() ([]byte, []int) {
 	return file_spec_instance_proto_rawDescGZIP(), []int{4, 0}
 }
 
@@ -416,18 +416,18 @@ func (x *ControlReply) GetResult() ControlReply_ControlResult {
 	return ControlReply_UNKNOWN
 }
 
-// InstanceProvisionRequest contains a request to create/delete an instance
-type InstanceProvisionRequest struct {
+// ProvisionRequest contains a request to create/delete an instance
+type ProvisionRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Instance *Instance                                `protobuf:"bytes,1,opt,name=Instance,proto3" json:"Instance,omitempty"`
-	Action   InstanceProvisionRequest_ProvisionAction `protobuf:"varint,10,opt,name=Action,proto3,enum=spec.InstanceProvisionRequest_ProvisionAction" json:"Action,omitempty"`
+	Instance *Instance                        `protobuf:"bytes,1,opt,name=Instance,proto3" json:"Instance,omitempty"`
+	Action   ProvisionRequest_ProvisionAction `protobuf:"varint,10,opt,name=Action,proto3,enum=spec.ProvisionRequest_ProvisionAction" json:"Action,omitempty"`
 }
 
-func (x *InstanceProvisionRequest) Reset() {
-	*x = InstanceProvisionRequest{}
+func (x *ProvisionRequest) Reset() {
+	*x = ProvisionRequest{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_spec_instance_proto_msgTypes[3]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -435,13 +435,13 @@ func (x *InstanceProvisionRequest) Reset() {
 	}
 }
 
-func (x *InstanceProvisionRequest) String() string {
+func (x *ProvisionRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*InstanceProvisionRequest) ProtoMessage() {}
+func (*ProvisionRequest) ProtoMessage() {}
 
-func (x *InstanceProvisionRequest) ProtoReflect() protoreflect.Message {
+func (x *ProvisionRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_spec_instance_proto_msgTypes[3]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -453,37 +453,37 @@ func (x *InstanceProvisionRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use InstanceProvisionRequest.ProtoReflect.Descriptor instead.
-func (*InstanceProvisionRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use ProvisionRequest.ProtoReflect.Descriptor instead.
+func (*ProvisionRequest) Descriptor() ([]byte, []int) {
 	return file_spec_instance_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *InstanceProvisionRequest) GetInstance() *Instance {
+func (x *ProvisionRequest) GetInstance() *Instance {
 	if x != nil {
 		return x.Instance
 	}
 	return nil
 }
 
-func (x *InstanceProvisionRequest) GetAction() InstanceProvisionRequest_ProvisionAction {
+func (x *ProvisionRequest) GetAction() ProvisionRequest_ProvisionAction {
 	if x != nil {
 		return x.Action
 	}
-	return InstanceProvisionRequest_UNKNOWN
+	return ProvisionRequest_UNKNOWN
 }
 
-// InstanceProvisionReply contains the outcome of a previous provision request
-type InstanceProvisionReply struct {
+// ProvisionReply contains the outcome of a previous provision request
+type ProvisionReply struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Instance *Instance                              `protobuf:"bytes,1,opt,name=Instance,proto3" json:"Instance,omitempty"`
-	Result   InstanceProvisionReply_ProvisionResult `protobuf:"varint,10,opt,name=Result,proto3,enum=spec.InstanceProvisionReply_ProvisionResult" json:"Result,omitempty"`
+	Instance *Instance                      `protobuf:"bytes,1,opt,name=Instance,proto3" json:"Instance,omitempty"`
+	Result   ProvisionReply_ProvisionResult `protobuf:"varint,10,opt,name=Result,proto3,enum=spec.ProvisionReply_ProvisionResult" json:"Result,omitempty"`
 }
 
-func (x *InstanceProvisionReply) Reset() {
-	*x = InstanceProvisionReply{}
+func (x *ProvisionReply) Reset() {
+	*x = ProvisionReply{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_spec_instance_proto_msgTypes[4]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -491,13 +491,13 @@ func (x *InstanceProvisionReply) Reset() {
 	}
 }
 
-func (x *InstanceProvisionReply) String() string {
+func (x *ProvisionReply) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*InstanceProvisionReply) ProtoMessage() {}
+func (*ProvisionReply) ProtoMessage() {}
 
-func (x *InstanceProvisionReply) ProtoReflect() protoreflect.Message {
+func (x *ProvisionReply) ProtoReflect() protoreflect.Message {
 	mi := &file_spec_instance_proto_msgTypes[4]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -509,23 +509,23 @@ func (x *InstanceProvisionReply) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use InstanceProvisionReply.ProtoReflect.Descriptor instead.
-func (*InstanceProvisionReply) Descriptor() ([]byte, []int) {
+// Deprecated: Use ProvisionReply.ProtoReflect.Descriptor instead.
+func (*ProvisionReply) Descriptor() ([]byte, []int) {
 	return file_spec_instance_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *InstanceProvisionReply) GetInstance() *Instance {
+func (x *ProvisionReply) GetInstance() *Instance {
 	if x != nil {
 		return x.Instance
 	}
 	return nil
 }
 
-func (x *InstanceProvisionReply) GetResult() InstanceProvisionReply_ProvisionResult {
+func (x *ProvisionReply) GetResult() ProvisionReply_ProvisionResult {
 	if x != nil {
 		return x.Result
 	}
-	return InstanceProvisionReply_UNKNOWN
+	return ProvisionReply_UNKNOWN
 }
 
 var File_spec_instance_proto protoreflect.FileDescriptor
@@ -565,26 +565,24 @@ var file_spec_instance_proto_rawDesc = []byte{
 	0x74, 0x72, 0x6f, 0x6c, 0x52, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x12, 0x0b, 0x0a, 0x07, 0x55, 0x4e,
 	0x4b, 0x4e, 0x4f, 0x57, 0x4e, 0x10, 0x00, 0x12, 0x0b, 0x0a, 0x07, 0x53, 0x55, 0x43, 0x43, 0x45,
 	0x53, 0x53, 0x10, 0x01, 0x12, 0x0b, 0x0a, 0x07, 0x46, 0x41, 0x49, 0x4c, 0x55, 0x52, 0x45, 0x10,
-	0x02, 0x22, 0xc6, 0x01, 0x0a, 0x18, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65, 0x50, 0x72,
-	0x6f, 0x76, 0x69, 0x73, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x2a,
-	0x0a, 0x08, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b,
-	0x32, 0x0e, 0x2e, 0x73, 0x70, 0x65, 0x63, 0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65,
-	0x52, 0x08, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65, 0x12, 0x46, 0x0a, 0x06, 0x41, 0x63,
-	0x74, 0x69, 0x6f, 0x6e, 0x18, 0x0a, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x2e, 0x2e, 0x73, 0x70, 0x65,
-	0x63, 0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65, 0x50, 0x72, 0x6f, 0x76, 0x69, 0x73,
+	0x02, 0x22, 0xb6, 0x01, 0x0a, 0x10, 0x50, 0x72, 0x6f, 0x76, 0x69, 0x73, 0x69, 0x6f, 0x6e, 0x52,
+	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x2a, 0x0a, 0x08, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e,
+	0x63, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0e, 0x2e, 0x73, 0x70, 0x65, 0x63, 0x2e,
+	0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65, 0x52, 0x08, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e,
+	0x63, 0x65, 0x12, 0x3e, 0x0a, 0x06, 0x41, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x18, 0x0a, 0x20, 0x01,
+	0x28, 0x0e, 0x32, 0x26, 0x2e, 0x73, 0x70, 0x65, 0x63, 0x2e, 0x50, 0x72, 0x6f, 0x76, 0x69, 0x73,
 	0x69, 0x6f, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x2e, 0x50, 0x72, 0x6f, 0x76, 0x69,
 	0x73, 0x69, 0x6f, 0x6e, 0x41, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x06, 0x41, 0x63, 0x74, 0x69,
 	0x6f, 0x6e, 0x22, 0x36, 0x0a, 0x0f, 0x50, 0x72, 0x6f, 0x76, 0x69, 0x73, 0x69, 0x6f, 0x6e, 0x41,
 	0x63, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x0b, 0x0a, 0x07, 0x55, 0x4e, 0x4b, 0x4e, 0x4f, 0x57, 0x4e,
 	0x10, 0x00, 0x12, 0x0a, 0x0a, 0x06, 0x43, 0x52, 0x45, 0x41, 0x54, 0x45, 0x10, 0x01, 0x12, 0x0a,
-	0x0a, 0x06, 0x44, 0x45, 0x4c, 0x45, 0x54, 0x45, 0x10, 0x02, 0x22, 0xc4, 0x01, 0x0a, 0x16, 0x49,
-	0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65, 0x50, 0x72, 0x6f, 0x76, 0x69, 0x73, 0x69, 0x6f, 0x6e,
-	0x52, 0x65, 0x70, 0x6c, 0x79, 0x12, 0x2a, 0x0a, 0x08, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63,
-	0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0e, 0x2e, 0x73, 0x70, 0x65, 0x63, 0x2e, 0x49,
-	0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65, 0x52, 0x08, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63,
-	0x65, 0x12, 0x44, 0x0a, 0x06, 0x52, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x18, 0x0a, 0x20, 0x01, 0x28,
-	0x0e, 0x32, 0x2c, 0x2e, 0x73, 0x70, 0x65, 0x63, 0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63,
-	0x65, 0x50, 0x72, 0x6f, 0x76, 0x69, 0x73, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x70, 0x6c, 0x79, 0x2e,
+	0x0a, 0x06, 0x44, 0x45, 0x4c, 0x45, 0x54, 0x45, 0x10, 0x02, 0x22, 0xb4, 0x01, 0x0a, 0x0e, 0x50,
+	0x72, 0x6f, 0x76, 0x69, 0x73, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x70, 0x6c, 0x79, 0x12, 0x2a, 0x0a,
+	0x08, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32,
+	0x0e, 0x2e, 0x73, 0x70, 0x65, 0x63, 0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65, 0x52,
+	0x08, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65, 0x12, 0x3c, 0x0a, 0x06, 0x52, 0x65, 0x73,
+	0x75, 0x6c, 0x74, 0x18, 0x0a, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x24, 0x2e, 0x73, 0x70, 0x65, 0x63,
+	0x2e, 0x50, 0x72, 0x6f, 0x76, 0x69, 0x73, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x70, 0x6c, 0x79, 0x2e,
 	0x50, 0x72, 0x6f, 0x76, 0x69, 0x73, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x52,
 	0x06, 0x52, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x22, 0x38, 0x0a, 0x0f, 0x50, 0x72, 0x6f, 0x76, 0x69,
 	0x73, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x12, 0x0b, 0x0a, 0x07, 0x55, 0x4e,
@@ -608,25 +606,25 @@ func file_spec_instance_proto_rawDescGZIP() []byte {
 var file_spec_instance_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
 var file_spec_instance_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_spec_instance_proto_goTypes = []interface{}{
-	(ControlRequest_ControlAction)(0),             // 0: spec.ControlRequest.ControlAction
-	(ControlReply_ControlResult)(0),               // 1: spec.ControlReply.ControlResult
-	(InstanceProvisionRequest_ProvisionAction)(0), // 2: spec.InstanceProvisionRequest.ProvisionAction
-	(InstanceProvisionReply_ProvisionResult)(0),   // 3: spec.InstanceProvisionReply.ProvisionResult
-	(*Instance)(nil),                              // 4: spec.Instance
-	(*ControlRequest)(nil),                        // 5: spec.ControlRequest
-	(*ControlReply)(nil),                          // 6: spec.ControlReply
-	(*InstanceProvisionRequest)(nil),              // 7: spec.InstanceProvisionRequest
-	(*InstanceProvisionReply)(nil),                // 8: spec.InstanceProvisionReply
+	(ControlRequest_ControlAction)(0),     // 0: spec.ControlRequest.ControlAction
+	(ControlReply_ControlResult)(0),       // 1: spec.ControlReply.ControlResult
+	(ProvisionRequest_ProvisionAction)(0), // 2: spec.ProvisionRequest.ProvisionAction
+	(ProvisionReply_ProvisionResult)(0),   // 3: spec.ProvisionReply.ProvisionResult
+	(*Instance)(nil),                      // 4: spec.Instance
+	(*ControlRequest)(nil),                // 5: spec.ControlRequest
+	(*ControlReply)(nil),                  // 6: spec.ControlReply
+	(*ProvisionRequest)(nil),              // 7: spec.ProvisionRequest
+	(*ProvisionReply)(nil),                // 8: spec.ProvisionReply
 }
 var file_spec_instance_proto_depIdxs = []int32{
 	4, // 0: spec.ControlRequest.Instance:type_name -> spec.Instance
 	0, // 1: spec.ControlRequest.Action:type_name -> spec.ControlRequest.ControlAction
 	4, // 2: spec.ControlReply.Instance:type_name -> spec.Instance
 	1, // 3: spec.ControlReply.Result:type_name -> spec.ControlReply.ControlResult
-	4, // 4: spec.InstanceProvisionRequest.Instance:type_name -> spec.Instance
-	2, // 5: spec.InstanceProvisionRequest.Action:type_name -> spec.InstanceProvisionRequest.ProvisionAction
-	4, // 6: spec.InstanceProvisionReply.Instance:type_name -> spec.Instance
-	3, // 7: spec.InstanceProvisionReply.Result:type_name -> spec.InstanceProvisionReply.ProvisionResult
+	4, // 4: spec.ProvisionRequest.Instance:type_name -> spec.Instance
+	2, // 5: spec.ProvisionRequest.Action:type_name -> spec.ProvisionRequest.ProvisionAction
+	4, // 6: spec.ProvisionReply.Instance:type_name -> spec.Instance
+	3, // 7: spec.ProvisionReply.Result:type_name -> spec.ProvisionReply.ProvisionResult
 	8, // [8:8] is the sub-list for method output_type
 	8, // [8:8] is the sub-list for method input_type
 	8, // [8:8] is the sub-list for extension type_name
@@ -677,7 +675,7 @@ func file_spec_instance_proto_init() {
 			}
 		}
 		file_spec_instance_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*InstanceProvisionRequest); i {
+			switch v := v.(*ProvisionRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -689,7 +687,7 @@ func file_spec_instance_proto_init() {
 			}
 		}
 		file_spec_instance_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*InstanceProvisionReply); i {
+			switch v := v.(*ProvisionReply); i {
 			case 0:
 				return &v.state
 			case 1:

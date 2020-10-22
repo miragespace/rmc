@@ -37,8 +37,8 @@ message ControlReply {
     ControlResult Result = 10;
 }
 
-// InstanceProvisionRequest contains a request to create/delete an instance
-message InstanceProvisionRequest {
+// ProvisionRequest contains a request to create/delete an instance
+message ProvisionRequest {
     enum ProvisionAction {
         UNKNOWN = 0;
         CREATE = 1;
@@ -49,14 +49,13 @@ message InstanceProvisionRequest {
     ProvisionAction Action = 10;
 }
 
-// InstanceProvisionReply contains the outcome of a previous provision request
-message InstanceProvisionReply {
+// ProvisionReply contains the outcome of a previous provision request
+message ProvisionReply {
     enum ProvisionResult {
         UNKNOWN = 0;
         SUCCESS = 1;
         FAILURE = 2;
     }
-
     Instance Instance = 1;
 
     ProvisionResult Result = 10;
