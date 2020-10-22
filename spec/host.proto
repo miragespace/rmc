@@ -1,0 +1,11 @@
+syntax = "proto3";
+package spec;
+
+message Host {
+    string Name = 1;
+    int Load = 2;
+}
+
+message Heartbeat {
+    Host Host = 1;
+}

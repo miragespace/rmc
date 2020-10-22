@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/zllovesuki/rmc/auth"
+	"github.com/zllovesuki/rmc/host"
 	"go.uber.org/zap"
 
 	"github.com/go-chi/chi"
@@ -13,6 +14,7 @@ import (
 // Options contains the configuration for Service router
 type Options struct {
 	Auth            *auth.Auth
+	HostManager     *host.Manager
 	InstanceManager *Manager
 	Logger          *zap.Logger
 }
@@ -25,6 +27,9 @@ type Service struct {
 func NewService(option Options) (*Service, error) {
 	if option.Auth == nil {
 		return nil, fmt.Errorf("nil Auth is invalid")
+	}
+	if option.HostManager == nil {
+		return nil, fmt.Errorf("nil HostManager is invalid")
 	}
 	if option.InstanceManager == nil {
 		return nil, fmt.Errorf("nil InstanceManager is invalid")

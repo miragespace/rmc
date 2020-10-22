@@ -12,6 +12,7 @@ import (
 	"github.com/zllovesuki/rmc/auth"
 	"github.com/zllovesuki/rmc/customer"
 	"github.com/zllovesuki/rmc/db"
+	"github.com/zllovesuki/rmc/host"
 	"github.com/zllovesuki/rmc/instance"
 
 	"github.com/TheZeroSlave/zapsentry"
@@ -142,6 +143,13 @@ func main() {
 		)
 	}
 
+	hostManager, err := host.NewManager(logger, db)
+	if err != nil {
+		logger.Error("Cannot initialize HostManager",
+			zap.Error(err),
+		)
+	}
+
 	// Initialize servce routers
 	customerRouter, err := customer.NewService(customer.Options{
 		Auth:            auth,
@@ -156,6 +164,7 @@ func main() {
 
 	instanceRouter, err := instance.NewService(instance.Options{
 		Auth:            auth,
+		HostManager:     hostManager,
 		InstanceManager: instanceManager,
 		Logger:          logger,
 	})
