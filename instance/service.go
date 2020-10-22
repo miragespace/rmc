@@ -9,18 +9,20 @@ import (
 	"github.com/zllovesuki/rmc/broker"
 	"github.com/zllovesuki/rmc/host"
 	"github.com/zllovesuki/rmc/spec"
-	"go.uber.org/zap"
+	"github.com/zllovesuki/rmc/subscription"
 
 	"github.com/go-chi/chi"
+	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // Options contains the configuration for Service router
 type Options struct {
-	Auth            *auth.Auth
-	HostManager     *host.Manager
-	InstanceManager *Manager
-	Broker          broker.Broker
-	Logger          *zap.Logger
+	SubscriptionManager *subscription.Manager
+	HostManager         *host.Manager
+	InstanceManager     *Manager
+	Broker              broker.Broker
+	Logger              *zap.Logger
 }
 
 // Service is the instance API router
@@ -30,8 +32,8 @@ type Service struct {
 
 // NewService will create an instance of the instance API router
 func NewService(option Options) (*Service, error) {
-	if option.Auth == nil {
-		return nil, fmt.Errorf("nil Auth is invalid")
+	if option.SubscriptionManager == nil {
+		return nil, fmt.Errorf("nil SubscriptionManager is invalid")
 	}
 	if option.HostManager == nil {
 		return nil, fmt.Errorf("nil HostManager is invalid")
@@ -76,7 +78,10 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger = logger.With(zap.String("HostName", inst.HostName))
+	logger = logger.With(
+		zap.String("HostName", inst.HostName),
+		zap.String("SubscriptionID", inst.SubscriptionID),
+	)
 
 	host, err := s.HostManager.GetHostByName(ctx, inst.HostName)
 	if err != nil {
@@ -98,15 +103,32 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Cancel Stripe Subscription
+	if err := s.SubscriptionManager.CancelSubscription(inst.SubscriptionID); err != nil {
+		logger.Error("Unable to cancel Stripe Subscription",
+			zap.Error(err),
+		)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	inst.State = "Stopping"    // TODO: make enum
+	inst.Status = "Terminated" // TODO: make enum
+
+	if err := s.InstanceManager.UpdateInstance(ctx, inst); err != nil {
+		logger.Error("Unable to update instance status for DELETE",
+			zap.Error(err),
+		)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
 type NewInstanceRequest struct {
-	ServerVersion string `json:"serverVersion"`
-	IsJavaEdition bool   `json:"isJavaEdition"`
-	// TODO: figure out how the Stripe API works in the front end
+	ServerVersion  string `json:"serverVersion"`
+	IsJavaEdition  bool   `json:"isJavaEdition"`
+	SubscriptionID string `json:"subscriptionId"`
 }
 
 func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
@@ -127,13 +149,33 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Validate user request
-	// TODO: PriceID
+	valid, err := s.SubscriptionManager.ValidSubscription(claims.ID, req.SubscriptionID)
+	if err != nil {
+		logger.Error("Unable to verify subscription validity",
+			zap.Error(err),
+		)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if !valid {
+		http.Error(w, "not authorized", http.StatusUnauthorized)
+		return
+	}
+
+	uuid, err := uuid.NewRandom()
+	if err != nil {
+		logger.Error("Unable to get a random UUID",
+			zap.Error(err),
+		)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	inst := Instance{
-		ID:             "1234ewrekwr", // TODO: UUID generator
+		ID:             uuid.String(),
 		CustomerID:     claims.ID,
-		SubscriptionID: "to-be-populated", // TODO: Stripe
+		SubscriptionID: req.SubscriptionID,
 		ServerVersion:  req.ServerVersion,
 		IsJavaEdition:  req.IsJavaEdition,
 		State:          "Provisioning", // TODO: make enum

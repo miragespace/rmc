@@ -14,6 +14,7 @@ import (
 	"github.com/zllovesuki/rmc/db"
 	"github.com/zllovesuki/rmc/host"
 	"github.com/zllovesuki/rmc/instance"
+	"github.com/zllovesuki/rmc/subscription"
 
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
@@ -129,7 +130,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		logger.Error("Cannot initialize AuthManager",
+		logger.Fatal("Cannot initialize AuthManager",
 			zap.Error(err),
 		)
 	}
@@ -137,21 +138,28 @@ func main() {
 	// Initialize Managers
 	customerManager, err := customer.NewManager(logger, db)
 	if err != nil {
-		logger.Error("Cannot initialize CustomerManager",
+		logger.Fatal("Cannot initialize CustomerManager",
 			zap.Error(err),
 		)
 	}
 
 	instanceManager, err := instance.NewManager(logger, db)
 	if err != nil {
-		logger.Error("Cannot initialize InstanceManager",
+		logger.Fatal("Cannot initialize InstanceManager",
 			zap.Error(err),
 		)
 	}
 
 	hostManager, err := host.NewManager(logger, db)
 	if err != nil {
-		logger.Error("Cannot initialize HostManager",
+		logger.Fatal("Cannot initialize HostManager",
+			zap.Error(err),
+		)
+	}
+
+	subscriptionManager, err := subscription.NewManager(logger)
+	if err != nil {
+		logger.Fatal("Cannot initialize SubscriptionManager",
 			zap.Error(err),
 		)
 	}
@@ -163,20 +171,29 @@ func main() {
 		Logger:          logger,
 	})
 	if err != nil {
-		logger.Error("Cannot initialize Customer Service Router",
+		logger.Fatal("Cannot initialize Customer Service Router",
 			zap.Error(err),
 		)
 	}
 
 	instanceRouter, err := instance.NewService(instance.Options{
-		Auth:            auth,
-		HostManager:     hostManager,
-		InstanceManager: instanceManager,
-		Broker:          amqpBroker,
-		Logger:          logger,
+		SubscriptionManager: subscriptionManager,
+		HostManager:         hostManager,
+		InstanceManager:     instanceManager,
+		Broker:              amqpBroker,
+		Logger:              logger,
 	})
 	if err != nil {
-		logger.Error("Cannot initialize Instance Service Router",
+		logger.Fatal("Cannot initialize Instance Service Router",
+			zap.Error(err),
+		)
+	}
+
+	subscriptionRouter, err := subscription.NewService(subscription.Options{
+		Logger: logger,
+	})
+	if err != nil {
+		logger.Fatal("Cannot initialize Subscription Service Router",
 			zap.Error(err),
 		)
 	}
@@ -198,6 +215,7 @@ func main() {
 	authenticated := r.With(authMiddleware...)
 
 	authenticated.Mount("/instances", instanceRouter.Router())
+	authenticated.Mount("/subscriptions", subscriptionRouter.Router())
 
 	// For application insights
 	r.Mount("/debug", middleware.Profiler())

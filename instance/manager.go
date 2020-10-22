@@ -57,3 +57,15 @@ func (m *Manager) GetByID(ctx context.Context, id string) (*Instance, error) {
 
 	return &inst, nil
 }
+
+func (m *Manager) UpdateInstance(ctx context.Context, inst *Instance) error {
+	result := m.db.WithContext(ctx).Save(inst)
+
+	if result.Error != nil {
+		m.logger.Error("Database returned error",
+			zap.Error(result.Error),
+		)
+		return result.Error
+	}
+	return nil
+}

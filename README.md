@@ -37,6 +37,10 @@ Services:
 
 3. Refactor error handling into a package
 
+4. Make all response JSON
+
+5. Add tests to all packages
+
 ```
 (c) 2020 Rachel Chen
 ```
