@@ -1,0 +1,66 @@
+syntax = "proto3";
+package spec;
+
+// Control defines the action taken to control the running status of the instance
+enum Control {
+    UNKNOWN = 0;
+    START = 1;
+    STOP = 2;
+}
+
+// ControlResult defines the outcome of the control
+enum ControlResult {
+    UNKNOWN = 0;
+    SUCCESS = 1;
+    FAILURE = 2;
+}
+
+// Provision defines the action taken to the state of the instance
+enum Provision {
+    UNKNOWN = 0;
+    CREATE = 1;
+    DELETE = 2;
+}
+
+// ProvisionResult defines the outcome of provision actions
+enum ProvisionResult {
+    UNKNOWN = 0;
+    SUCCESS = 1;
+    FAILURE = 2;
+}
+
+// Instance describes the a Minecraft server
+message Instance {
+    string InstanceID = 1;
+    string Host = 2;
+    string Addr = 3;
+    fixed32 port = 4;
+}
+
+// ControlRequest contains a request to start/stop an instance
+message ControlRequest {
+    Instance Instance = 1;
+
+    Control Action = 10;
+}
+
+// ControlReply contains the outcome of a previous control request
+message ControlReply {
+    Instance Instance = 1;
+
+    ControlResult Result = 10;
+}
+
+// InstanceProvisionRequest contains a request to create/delete an instance
+message InstanceProvisionRequest {
+    Instance Instance = 1;
+
+    Privision Action = 10;
+}
+
+// InstanceProvisionReply contains the outcome of a previous provision request
+message InstanceProvisionReply {
+    Instance Instance = 1;
+
+    ProvisionResult Result = 10;
+}
