@@ -3,7 +3,8 @@ package spec;
 
 message Host {
     string Name = 1;
-    int64 Load = 2;
+    int64 Running = 2;
+    int64 Stopped = 3;
 }
 
 message Heartbeat {
