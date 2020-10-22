@@ -34,7 +34,10 @@ message Instance {
     string InstanceID = 1;
     string Host = 2;
     string Addr = 3;
-    fixed32 port = 4;
+    fixed32 Port = 4;
+    string Version = 5;
+
+    bool IsJavaEdition = 10;
 }
 
 // ControlRequest contains a request to start/stop an instance
