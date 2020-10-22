@@ -109,6 +109,7 @@ func main() {
 			zap.Error(err),
 		)
 	}
+	defer amqpBroker.Close()
 
 	// Initialize authentication manager
 	smtpAuth := smtp.PlainAuth("", os.Getenv("SMTP_USERNAME"), os.Getenv("SMTP_PASSWORD"), os.Getenv("SMTP_HOST"))

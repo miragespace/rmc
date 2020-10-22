@@ -57,12 +57,7 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 	instanceID := chi.URLParam(r, "id")
 	logger := s.Logger.With(zap.String("InstanceID", instanceID))
 
-	claims, ok := ctx.Value(auth.Context).(*auth.Claims)
-	if !ok {
-		logger.Error("Context has no Claims")
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
+	claims := ctx.Value(auth.Context).(*auth.Claims)
 
 	inst, err := s.InstanceManager.GetByID(ctx, instanceID)
 	if err != nil {
@@ -73,7 +68,7 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if inst.CustomerID != claims.ID || inst == nil {
+	if inst == nil || inst.CustomerID != claims.ID {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -134,12 +129,7 @@ type NewInstanceRequest struct {
 func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	claims, ok := ctx.Value(auth.Context).(*auth.Claims)
-	if !ok {
-		s.Logger.Error("Context has no Claims")
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
+	claims := ctx.Value(auth.Context).(*auth.Claims)
 
 	logger := s.Logger.With(zap.String("CustomerID", claims.ID))
 
@@ -222,19 +212,13 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 
 // Router will return the routes under instance API
 func (s *Service) Router() http.Handler {
-	r := chi.NewRouter()
+	r := chi.NewRouter().With(auth.ClaimCheck(s.Logger))
 
 	r.Post("/", s.newInstance)
 	r.Delete("/{id}", s.deleteInstance)
 	r.Get("/test", func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-
-		claims, ok := ctx.Value(auth.Context).(*auth.Claims)
-		if !ok {
-			s.Logger.Error("Context has no Claims")
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
+		claims := ctx.Value(auth.Context).(*auth.Claims)
 		fmt.Fprintf(w, "this is a test for jwt token. CustomerID: "+claims.ID)
 	})
 

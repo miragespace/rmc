@@ -71,3 +71,18 @@ func (a *Auth) Middleware() func(next http.Handler) http.Handler {
 		})
 	}
 }
+
+// ClaimCheck returns a http middlware to authenticated route to ensure that Claims exists in the context
+func ClaimCheck(logger *zap.Logger) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, ok := r.Context().Value(Context).(*Claims)
+			if !ok {
+				logger.Error("Context has no Claims")
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}

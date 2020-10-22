@@ -39,12 +39,7 @@ type PaymentSetupRequest struct {
 func (s *Service) setupPayment(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	claims, ok := ctx.Value(auth.Context).(*auth.Claims)
-	if !ok {
-		s.Logger.Error("Context has no Claims")
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
+	claims := ctx.Value(auth.Context).(*auth.Claims)
 
 	logger := s.Logger.With(zap.String("CustomerID", claims.ID))
 
@@ -92,23 +87,18 @@ func (s *Service) setupPayment(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-type SubscriptionRequest struct {
+type SubscriptionSetupRequest struct {
 	PriceID string `json:"priceId"` // TODO: replace this with PlanID
 }
 
 func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	claims, ok := ctx.Value(auth.Context).(*auth.Claims)
-	if !ok {
-		s.Logger.Error("Context has no Claims")
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
+	claims := ctx.Value(auth.Context).(*auth.Claims)
 
 	logger := s.Logger.With(zap.String("CustomerID", claims.ID))
 
-	var req SubscriptionRequest
+	var req SubscriptionSetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -140,7 +130,7 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) Router() http.Handler {
-	r := chi.NewRouter()
+	r := chi.NewRouter().With(auth.ClaimCheck(s.Logger))
 
 	r.Post("/initialSetup", s.setupPayment)
 	r.Post("/", s.setupSubscription)

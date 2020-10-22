@@ -11,7 +11,8 @@ var _ Broker = &AMQPBroker{}
 
 // AMQPBroker describes a message broker via RabbitMQ
 type AMQPBroker struct {
-	Channel *amqp.Channel
+	connection *amqp.Connection
+	Channel    *amqp.Channel
 }
 
 // NewAMQPBroker returns a Message Broker over RabbitMQ
@@ -25,8 +26,14 @@ func NewAMQPBroker(amqpURI string) (Broker, error) {
 		return nil, extErrors.Wrap(err, "Cannot create broken channel")
 	}
 	return &AMQPBroker{
-		Channel: amqpChan,
+		connection: amqpConn,
+		Channel:    amqpChan,
 	}, nil
+}
+
+func (a *AMQPBroker) Close() {
+	a.Channel.Close()
+	a.connection.Close()
 }
 
 func (a *AMQPBroker) SendControlRequest(host *host.Host, p *spec.ControlRequest) error {
