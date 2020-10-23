@@ -12,3 +12,4 @@ build_api:
 
 build_host:
 	go build -ldflags "-X 'main.Version=$(COMMIT_HASH)'" -o bin/host ./cmd/host
+	GOOS=windows go build -ldflags "-X 'main.Version=$(COMMIT_HASH)'" -o bin/host.exe ./cmd/host
