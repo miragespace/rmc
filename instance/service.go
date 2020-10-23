@@ -223,6 +223,20 @@ func (s *Service) Router() http.Handler {
 	r.Get("/test", func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		claims := ctx.Value(auth.Context).(*auth.Claims)
+		if err := s.Broker.SendControlRequest(&host.Host{
+			Name: "test",
+		}, &spec.ControlRequest{
+			Instance: &spec.Instance{
+				InstanceID: "test-instance",
+			},
+			Action: spec.ControlRequest_START,
+		}); err != nil {
+			s.Logger.Error("Unable to send test request",
+				zap.Error(err),
+			)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 		fmt.Fprintf(w, "this is a test for jwt token. CustomerID: "+claims.ID)
 	})
 

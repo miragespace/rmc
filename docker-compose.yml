@@ -52,3 +52,14 @@ services:
     restart: always
     ports:
       - 42069:42069
+
+  host:
+    container_name: host
+    depends_on:
+      - rabbit
+    image: golang:1.15.3-alpine
+    volumes:
+      - .:/go/src/rmc
+    working_dir: /go/src/rmc
+    command: go run ./cmd/host
+    restart: always

@@ -20,7 +20,7 @@ type Options struct {
 }
 
 type Service struct {
-	Logger *zap.Logger
+	Options
 }
 
 func NewService(option Options) (*Service, error) {
@@ -28,7 +28,7 @@ func NewService(option Options) (*Service, error) {
 		return nil, fmt.Errorf("nil Logger is invalid")
 	}
 	return &Service{
-		Logger: option.Logger,
+		Options: option,
 	}, nil
 }
 
