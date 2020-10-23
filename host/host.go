@@ -11,7 +11,7 @@ type Host struct {
 	LastHeartbeat time.Time
 }
 
-// RoutingKey will return a deterministic routing key for message broker
-func (h *Host) RoutingKey() string {
+// Identifier will return a deterministic routing key for message broker
+func (h *Host) Identifier() string {
 	return "worker-" + h.Name
 }
