@@ -13,8 +13,6 @@ import (
 type Manager struct {
 	db     *gorm.DB
 	logger *zap.Logger
-	// TODO: add hooks to control server
-	// TODO: add Subscription Client
 }
 
 // NewManager returns a new Manager for instances

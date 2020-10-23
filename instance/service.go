@@ -106,8 +106,8 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inst.State = "Stopping"    // TODO: make enum
-	inst.Status = "Terminated" // TODO: make enum
+	inst.State = StateStopping
+	inst.Status = StatusTerminated
 
 	if err := s.InstanceManager.UpdateInstance(ctx, inst); err != nil {
 		logger.Error("Unable to update instance status for DELETE",
@@ -120,6 +120,8 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// NewInstanceRequest contains the request from client to provision a new instance.
+// A valid subscription must be set up before a new instance can be provisioned
 type NewInstanceRequest struct {
 	ServerVersion  string `json:"serverVersion"`
 	IsJavaEdition  bool   `json:"isJavaEdition"`
@@ -153,27 +155,11 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logger = logger.With(zap.String("SubscriptionID", req.SubscriptionID))
+
 	uuid, err := uuid.NewRandom()
 	if err != nil {
 		logger.Error("Unable to get a random UUID",
-			zap.Error(err),
-		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	inst := Instance{
-		ID:             uuid.String(),
-		CustomerID:     claims.ID,
-		SubscriptionID: req.SubscriptionID,
-		ServerVersion:  req.ServerVersion,
-		IsJavaEdition:  req.IsJavaEdition,
-		State:          "Provisioning", // TODO: make enum
-		Status:         "Active",       // TODO: make enum
-	}
-
-	if err := s.InstanceManager.NewInstance(ctx, &inst); err != nil {
-		logger.Error("Unable to create instance",
 			zap.Error(err),
 		)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -190,6 +176,24 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger = logger.With(zap.String("HostName", host.Name))
+
+	inst := Instance{
+		ID:             uuid.String(),
+		CustomerID:     claims.ID,
+		SubscriptionID: req.SubscriptionID,
+		ServerVersion:  req.ServerVersion,
+		IsJavaEdition:  req.IsJavaEdition,
+		State:          StateProvisioning,
+		Status:         StatusActive,
+	}
+
+	if err := s.InstanceManager.NewInstance(ctx, &inst); err != nil {
+		logger.Error("Unable to create instance",
+			zap.Error(err),
+		)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	if err := s.Broker.SendProvisionRequest(host, &spec.ProvisionRequest{
 		Instance: &spec.Instance{
