@@ -28,6 +28,11 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// Build-time injected variables
+var (
+	Version = ""
+)
+
 func main() {
 	var logger *zap.Logger
 	var authEnvironment auth.Environment
@@ -45,11 +50,12 @@ func main() {
 		authEnvironment = auth.EnvDevelopment
 		logger, err = zap.NewDevelopment()
 	}
-	defer logger.Sync()
 
 	if err != nil {
 		log.Fatalf("Cannot initialize logger: %v\n", err)
 	}
+	logger = logger.With(zap.String("Version", Version))
+	defer logger.Sync()
 
 	// Load configurations from dotFile
 	if err := godotenv.Load(dotFile); err != nil {
@@ -101,7 +107,11 @@ func main() {
 	}
 	defer rdb.Close()
 
-	rdb.Ping()
+	if status := rdb.Ping(); status.Err() != nil {
+		logger.Fatal("Cannot ping Redis",
+			zap.Error(status.Err()),
+		)
+	}
 
 	amqpBroker, err := broker.NewAMQPBroker(os.Getenv("AMQP_URI"))
 	if err != nil {
