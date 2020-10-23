@@ -26,7 +26,7 @@ func NewManager(logger *zap.Logger, db *gorm.DB) (*Manager, error) {
 	}, nil
 }
 
-func (m *Manager) NewInstance(ctx context.Context, inst *Instance) error {
+func (m *Manager) Create(ctx context.Context, inst *Instance) error {
 	result := m.db.WithContext(ctx).Create(inst)
 	if result.Error != nil {
 		m.logger.Error("Unable to create new instance in database",
@@ -56,7 +56,30 @@ func (m *Manager) GetByID(ctx context.Context, id string) (*Instance, error) {
 	return &inst, nil
 }
 
-func (m *Manager) UpdateInstance(ctx context.Context, inst *Instance) error {
+func (m *Manager) GetBySubscriptionId(ctx context.Context, sid string) (*Instance, error) {
+	inst := Instance{}
+
+	result := m.db.WithContext(ctx).Where("subscription_id = ?", sid).First(&inst)
+
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+
+	if result.Error != nil {
+		m.logger.Error("Database returned error",
+			zap.Error(result.Error),
+		)
+		return nil, extErrors.Wrap(result.Error, "Cannot get instance by subscription id")
+	}
+
+	return &inst, nil
+}
+
+func (m *Manager) ListByCustomerID(ctx context.Context, cid string) ([]*Instance, error) {
+	panic("not implemented")
+}
+
+func (m *Manager) Update(ctx context.Context, inst *Instance) error {
 	result := m.db.WithContext(ctx).Save(inst)
 
 	if result.Error != nil {

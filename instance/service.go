@@ -6,9 +6,9 @@ import (
 	"net/http"
 
 	"github.com/zllovesuki/rmc/auth"
-	"github.com/zllovesuki/rmc/broker"
 	"github.com/zllovesuki/rmc/host"
-	"github.com/zllovesuki/rmc/spec"
+	"github.com/zllovesuki/rmc/spec/broker"
+	"github.com/zllovesuki/rmc/spec/protocol"
 	"github.com/zllovesuki/rmc/subscription"
 
 	"github.com/go-chi/chi"
@@ -21,7 +21,7 @@ type Options struct {
 	SubscriptionManager *subscription.Manager
 	HostManager         *host.Manager
 	InstanceManager     *Manager
-	Broker              broker.Broker
+	Producer            broker.Producer
 	Logger              *zap.Logger
 }
 
@@ -41,7 +41,7 @@ func NewService(option Options) (*Service, error) {
 	if option.InstanceManager == nil {
 		return nil, fmt.Errorf("nil InstanceManager is invalid")
 	}
-	if option.Broker == nil {
+	if option.Producer == nil {
 		return nil, fmt.Errorf("nil Broker is invalid")
 	}
 	if option.Logger == nil {
@@ -85,11 +85,11 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
-	if err := s.Broker.SendProvisionRequest(host, &spec.ProvisionRequest{
-		Instance: &spec.Instance{
+	if err := s.Producer.SendProvisionRequest(host, &protocol.ProvisionRequest{
+		Instance: &protocol.Instance{
 			InstanceID: inst.ID,
 		},
-		Action: spec.ProvisionRequest_DELETE,
+		Action: protocol.ProvisionRequest_DELETE,
 	}); err != nil {
 		logger.Error("Unable to send provision DELETE request",
 			zap.Error(err),
@@ -109,7 +109,7 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 	inst.State = StateStopping
 	inst.Status = StatusTerminated
 
-	if err := s.InstanceManager.UpdateInstance(ctx, inst); err != nil {
+	if err := s.InstanceManager.Update(ctx, inst); err != nil {
 		logger.Error("Unable to update instance status for DELETE",
 			zap.Error(err),
 		)
@@ -149,13 +149,26 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-
 	if !valid {
 		http.Error(w, "not authorized", http.StatusUnauthorized)
 		return
 	}
 
 	logger = logger.With(zap.String("SubscriptionID", req.SubscriptionID))
+
+	// make sure user is not double dipping
+	existingInst, err := s.InstanceManager.GetBySubscriptionId(ctx, req.SubscriptionID)
+	if err != nil {
+		logger.Error("Unable to verify duplicate subscription existence",
+			zap.Error(err),
+		)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if existingInst != nil {
+		http.Error(w, "duplicate subscription", http.StatusConflict)
+		return
+	}
 
 	uuid, err := uuid.NewRandom()
 	if err != nil {
@@ -187,7 +200,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		Status:         StatusActive,
 	}
 
-	if err := s.InstanceManager.NewInstance(ctx, &inst); err != nil {
+	if err := s.InstanceManager.Create(ctx, &inst); err != nil {
 		logger.Error("Unable to create instance",
 			zap.Error(err),
 		)
@@ -195,12 +208,12 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Broker.SendProvisionRequest(host, &spec.ProvisionRequest{
-		Instance: &spec.Instance{
+	if err := s.Producer.SendProvisionRequest(host, &protocol.ProvisionRequest{
+		Instance: &protocol.Instance{
 			Version:       req.ServerVersion,
 			IsJavaEdition: req.IsJavaEdition,
 		},
-		Action: spec.ProvisionRequest_CREATE,
+		Action: protocol.ProvisionRequest_CREATE,
 	}); err != nil {
 		logger.Error("Unable to send provision CREATE request",
 			zap.Error(err),
@@ -223,13 +236,13 @@ func (s *Service) Router() http.Handler {
 	r.Get("/test", func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		claims := ctx.Value(auth.Context).(*auth.Claims)
-		if err := s.Broker.SendControlRequest(&host.Host{
+		if err := s.Producer.SendControlRequest(&host.Host{
 			Name: "test",
-		}, &spec.ControlRequest{
-			Instance: &spec.Instance{
+		}, &protocol.ControlRequest{
+			Instance: &protocol.Instance{
 				InstanceID: "test-instance",
 			},
-			Action: spec.ControlRequest_START,
+			Action: protocol.ControlRequest_START,
 		}); err != nil {
 			s.Logger.Error("Unable to send test request",
 				zap.Error(err),

@@ -1,5 +1,7 @@
 syntax = "proto3";
-package spec;
+package protocol;
+
+option go_package = "github.com/zllovesuki/rmc/spec/protocol";
 
 message Host {
     string Name = 1;

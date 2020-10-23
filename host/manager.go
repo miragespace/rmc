@@ -3,7 +3,7 @@ package host
 import (
 	"context"
 
-	"github.com/zllovesuki/rmc/spec"
+	"github.com/zllovesuki/rmc/spec/protocol"
 
 	extErrors "github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -35,6 +35,6 @@ func (m *Manager) NextAvailableHost(ctx context.Context) (*Host, error) {
 	panic("not implemented")
 }
 
-func (m *Manager) ProcessHeartbeat(ctx context.Context, p *spec.Heartbeat) error {
+func (m *Manager) ProcessHeartbeat(ctx context.Context, p *protocol.Heartbeat) error {
 	panic("not implemented")
 }

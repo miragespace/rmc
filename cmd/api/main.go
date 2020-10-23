@@ -191,7 +191,7 @@ func main() {
 		SubscriptionManager: subscriptionManager,
 		HostManager:         hostManager,
 		InstanceManager:     instanceManager,
-		Broker:              amqpBroker,
+		Producer:            amqpBroker,
 		Logger:              logger,
 	})
 	if err != nil {
