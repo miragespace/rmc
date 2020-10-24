@@ -13,6 +13,10 @@ Backend:
 - Protobuf
 - GitHub Actions (CI coming soon)
 
+Frontend:
+- Vue.js
+- Cloudflare Workers Sites
+
 Data:
 - Redis: For passwordless login token storage
 - PostgreSQL: For persistence data storage & usage accounting
@@ -28,12 +32,13 @@ Services:
 - Mailgun: For outbound SMTP sending passwordless token emails
 - Sentry: For error monitoring
 - Stripe: For Usage-Based Billing
+- Cloudflare: For API endpoint security
 
 ## TODO
 
 1. ~~Structual logging with zap~~
 
-2. Add hooks to manage instances
+2. ~~Add hooks to manage instances~~ Dependency injection
 
 3. Refactor error handling into a package
 
