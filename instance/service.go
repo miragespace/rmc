@@ -232,7 +232,6 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inst.State = StateStopping
 	inst.Status = StatusTerminated
 
 	if err := s.InstanceManager.Update(ctx, inst); err != nil {
