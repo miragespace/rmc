@@ -15,20 +15,20 @@ import (
 	"go.uber.org/zap"
 )
 
-type Options struct {
+type ServiceOptions struct {
 	Logger *zap.Logger
 }
 
 type Service struct {
-	Options
+	ServiceOptions
 }
 
-func NewService(option Options) (*Service, error) {
+func NewService(option ServiceOptions) (*Service, error) {
 	if option.Logger == nil {
 		return nil, fmt.Errorf("nil Logger is invalid")
 	}
 	return &Service{
-		Options: option,
+		ServiceOptions: option,
 	}, nil
 }
 

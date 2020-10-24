@@ -13,7 +13,12 @@ var bearerPrefix = "Bearer "
 
 // CreateTokenFromClaims will create a signed jwt token that contains the given Claims
 func (a *Auth) CreateTokenFromClaims(claims Claims) (string, error) {
-	expirationTime := time.Now().Add(30 * time.Minute)
+	var expirationTime time.Time
+	if a.Environment == EnvDevelopment {
+		expirationTime = time.Now().Add(time.Hour * 24)
+	} else {
+		expirationTime = time.Now().Add(time.Minute * 30)
+	}
 	claims.StandardClaims = jwt.StandardClaims{
 		ExpiresAt: expirationTime.Unix(),
 	}
