@@ -118,7 +118,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-tick:
-				amqpBroker.SendHeartbeart(&protocol.Heartbeat{
+				amqpBroker.SendHeartbeat(&protocol.Heartbeat{
 					Host: &protocol.Host{
 						Name:     "test",
 						Running:  0,

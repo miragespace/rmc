@@ -14,5 +14,5 @@ type Consumer interface {
 	SendProvisionReply(p *protocol.ProvisionReply) error
 	ReceiveControlRequest(ctx context.Context, host *host.Host) (<-chan *protocol.ControlRequest, error)
 	ReceiveProvisionRequest(ctx context.Context, host *host.Host) (<-chan *protocol.ProvisionRequest, error)
-	SendHeartbeart(p *protocol.Heartbeat) error
+	SendHeartbeat(p *protocol.Heartbeat) error
 }

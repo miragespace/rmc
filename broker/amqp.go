@@ -117,6 +117,7 @@ func (a *AMQPBroker) SendProvisionRequest(host *host.Host, p *protocol.Provision
 	return nil
 }
 
+// SendControlReply will send the control result back to the producer
 func (a *AMQPBroker) SendControlReply(p *protocol.ControlReply) error {
 	protoBytes, err := proto.Marshal(p)
 	if err != nil {
@@ -128,6 +129,7 @@ func (a *AMQPBroker) SendControlReply(p *protocol.ControlReply) error {
 	return nil
 }
 
+// SendProvisionReply will send the provision result back to the producer
 func (a *AMQPBroker) SendProvisionReply(p *protocol.ProvisionReply) error {
 	protoBytes, err := proto.Marshal(p)
 	if err != nil {
@@ -139,19 +141,17 @@ func (a *AMQPBroker) SendProvisionReply(p *protocol.ProvisionReply) error {
 	return nil
 }
 
-func (a *AMQPBroker) setupQueue(qName string) error {
-	_, err := a.consumerChannel.QueueDeclare(
+func (a *AMQPBroker) getMsgChannel(qName, exchange, routingKey string) (<-chan amqp.Delivery, error) {
+	if _, err := a.consumerChannel.QueueDeclare(
 		qName,
 		true,
 		false,
 		false,
 		false,
 		nil,
-	)
-	return err
-}
-
-func (a *AMQPBroker) bindAndGetMsgChan(qName, exchange, routingKey string) (<-chan amqp.Delivery, error) {
+	); err != nil {
+		return nil, err
+	}
 	if err := a.consumerChannel.QueueBind(
 		qName,
 		routingKey,
@@ -173,12 +173,10 @@ func (a *AMQPBroker) bindAndGetMsgChan(qName, exchange, routingKey string) (<-ch
 	return msgChan, err
 }
 
+// ReceiveControlRequest will consumer control requests directed to the host
 func (a *AMQPBroker) ReceiveControlRequest(ctx context.Context, host *host.Host) (<-chan *protocol.ControlRequest, error) {
 	name := "control_" + host.Identifier()
-	if err := a.setupQueue(name); err != nil {
-		return nil, extErrors.Wrap(err, "Cannot setup queue")
-	}
-	msgChan, err := a.bindAndGetMsgChan(name, instanceControlExchange, host.Identifier())
+	msgChan, err := a.getMsgChannel(name, instanceControlExchange, host.Identifier())
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot setup consumer")
 	}
@@ -202,12 +200,10 @@ func (a *AMQPBroker) ReceiveControlRequest(ctx context.Context, host *host.Host)
 	return rChan, nil
 }
 
+// ReceiveProvisionRequest will consumer provision requests directed to the host
 func (a *AMQPBroker) ReceiveProvisionRequest(ctx context.Context, host *host.Host) (<-chan *protocol.ProvisionRequest, error) {
 	name := "provision_" + host.Identifier()
-	if err := a.setupQueue(name); err != nil {
-		return nil, extErrors.Wrap(err, "Cannot setup queue")
-	}
-	msgChan, err := a.bindAndGetMsgChan(name, instanceProvisionExchange, host.Identifier())
+	msgChan, err := a.getMsgChannel(name, instanceProvisionExchange, host.Identifier())
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot setup consumer")
 	}
@@ -231,12 +227,10 @@ func (a *AMQPBroker) ReceiveProvisionRequest(ctx context.Context, host *host.Hos
 	return rChan, nil
 }
 
+// ReceiveControlReply will consumer control replies from hosts
 func (a *AMQPBroker) ReceiveControlReply(ctx context.Context) (<-chan *protocol.ControlReply, error) {
 	name := "process_control_" + hostReplyRoutingKey
-	if err := a.setupQueue(name); err != nil {
-		return nil, extErrors.Wrap(err, "Cannot setup queue")
-	}
-	msgChan, err := a.bindAndGetMsgChan(name, instanceControlExchange, hostReplyRoutingKey)
+	msgChan, err := a.getMsgChannel(name, instanceControlExchange, hostReplyRoutingKey)
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot setup consumer")
 	}
@@ -260,12 +254,10 @@ func (a *AMQPBroker) ReceiveControlReply(ctx context.Context) (<-chan *protocol.
 	return rChan, nil
 }
 
+// ReceiveProvisionReply will consumer provision replies from hosts
 func (a *AMQPBroker) ReceiveProvisionReply(ctx context.Context) (<-chan *protocol.ProvisionReply, error) {
 	name := "process_provision_" + hostReplyRoutingKey
-	if err := a.setupQueue(name); err != nil {
-		return nil, extErrors.Wrap(err, "Cannot setup queue")
-	}
-	msgChan, err := a.bindAndGetMsgChan(name, instanceProvisionExchange, hostReplyRoutingKey)
+	msgChan, err := a.getMsgChannel(name, instanceProvisionExchange, hostReplyRoutingKey)
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot setup consumer")
 	}
@@ -289,7 +281,8 @@ func (a *AMQPBroker) ReceiveProvisionReply(ctx context.Context) (<-chan *protoco
 	return rChan, nil
 }
 
-func (a *AMQPBroker) SendHeartbeart(b *protocol.Heartbeat) error {
+// SendHeartbeat signals the host is alive along with host metadata
+func (a *AMQPBroker) SendHeartbeat(b *protocol.Heartbeat) error {
 	protoBytes, err := proto.Marshal(b)
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot encode message into bytes")
@@ -300,12 +293,10 @@ func (a *AMQPBroker) SendHeartbeart(b *protocol.Heartbeat) error {
 	return nil
 }
 
+// ReceiveHeartbeat will consumer heartbeats from hosts
 func (a *AMQPBroker) ReceiveHeartbeat(ctx context.Context) (<-chan *protocol.Heartbeat, error) {
 	name := "process_" + hostHeartbeatExchange
-	if err := a.setupQueue(name); err != nil {
-		return nil, extErrors.Wrap(err, "Cannot setup queue")
-	}
-	msgChan, err := a.bindAndGetMsgChan(name, hostHeartbeatExchange, "#")
+	msgChan, err := a.getMsgChannel(name, hostHeartbeatExchange, "#")
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot setup consumer")
 	}
