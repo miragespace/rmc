@@ -43,31 +43,41 @@ func (t *InstanceTask) handleControlReply(ctx context.Context, cChan <-chan *pro
 		case <-ctx.Done():
 			return
 		case cReply := <-cChan:
+			if cReply.GetInstance() == nil {
+				t.Logger.Error("Received nil protocol.Instance when processing control reply")
+				continue
+			}
+			instanceID := cReply.GetInstance().GetInstanceID()
+			if len(instanceID) == 0 {
+				t.Logger.Error("Received empty protocol.InstanceID when processing control reply")
+				continue
+			}
 			logger := t.Logger.With(
-				zap.String("InstanceID", cReply.GetInstance().GetInstanceID()),
+				zap.String("InstanceID", instanceID),
 			)
-			inst, err := t.InstanceManager.GetByID(ctx, cReply.GetInstance().GetInstanceID())
-			if err != nil {
-				logger.Error("Cannot get instance by ID when processing control reply",
-					zap.Error(err),
-				)
-				continue
-			}
-			if inst == nil {
-				logger.Error("nil Instance when processing control reply")
-				continue
-			}
-			if cReply.GetResult() == protocol.ControlReply_SUCCESS {
-				if inst.State == instance.StateStopping {
-					inst.State = instance.StateStopped
-				} else {
-					inst.State = instance.StateRunning
+			lambda := func(currentState *instance.Instance, desiredState *instance.Instance) (shouldSave bool) {
+				if currentState == nil {
+					logger.Error("nil Instance when processing provision reply")
+					return
 				}
-			} else {
-				logger.Error("Instance control replied FAILURE")
-				inst.State = instance.StateUnknown
+				switch cReply.GetResult() {
+				case protocol.ControlReply_SUCCESS:
+					if currentState.State == instance.StateStopping {
+						desiredState.State = instance.StateStopped
+					} else {
+						desiredState.State = instance.StateRunning
+					}
+				case protocol.ControlReply_FAILURE:
+					logger.Error("Instance control replied failure")
+					desiredState.State = instance.StateError
+				default:
+					logger.Error("Instance control replied undetermined result")
+					desiredState.State = instance.StateUnknown
+				}
+				shouldSave = true
+				return
 			}
-			if err := t.InstanceManager.Update(ctx, inst); err != nil {
+			if err := t.InstanceManager.LambdaUpdate(ctx, instanceID, lambda); err != nil {
 				logger.Error("Cannot update instance status",
 					zap.Error(err),
 				)
@@ -82,35 +92,44 @@ func (t *InstanceTask) handleProvisionReply(ctx context.Context, pChan <-chan *p
 		case <-ctx.Done():
 			return
 		case pReply := <-pChan:
+			if pReply.GetInstance() == nil {
+				t.Logger.Error("Received nil protocol.Instance when processing provision reply")
+				continue
+			}
+			instanceID := pReply.GetInstance().GetInstanceID()
+			if len(instanceID) == 0 {
+				t.Logger.Error("Received empty protocol.InstanceID when processing provision reply")
+				continue
+			}
 			logger := t.Logger.With(
-				zap.String("InstanceID", pReply.GetInstance().GetInstanceID()),
+				zap.String("InstanceID", instanceID),
 			)
-			inst, err := t.InstanceManager.GetByID(ctx, pReply.GetInstance().GetInstanceID())
-			if err != nil {
-				logger.Error("Cannot get instance by ID when processing provision reply",
-					zap.Error(err),
-				)
-				continue
-			}
-			if inst == nil {
-				logger.Error("nil Instance when processing provision reply")
-				continue
-			}
-			if pReply.GetResult() == protocol.ProvisionReply_SUCCESS {
-				if inst.State == instance.StateProvisioning {
-					inst.ServerAddr = pReply.GetInstance().GetAddr()
-					inst.ServerPort = pReply.GetInstance().GetPort()
-					inst.State = instance.StateRunning
-				} else {
-					inst.State = instance.StateStopped
-					inst.Status = instance.StatusTerminated
+			lambda := func(currentState *instance.Instance, desiredState *instance.Instance) (shouldSave bool) {
+				if currentState == nil {
+					logger.Error("nil Instance when processing provision reply")
+					return
 				}
-			} else {
-				logger.Error("Provision replied FAILURE")
-				inst.State = instance.StateError
+				switch pReply.GetResult() {
+				case protocol.ProvisionReply_SUCCESS:
+					if currentState.State == instance.StateProvisioning {
+						desiredState.ServerAddr = pReply.GetInstance().GetAddr()
+						desiredState.ServerPort = pReply.GetInstance().GetPort()
+						desiredState.State = instance.StateRunning
+					} else {
+						desiredState.State = instance.StateStopped
+						desiredState.Status = instance.StatusTerminated
+					}
+				case protocol.ProvisionReply_FAILURE:
+					logger.Error("Provision replied failure")
+					desiredState.State = instance.StateError
+				default:
+					logger.Error("Provision replied undetermined result")
+					desiredState.State = instance.StateUnknown
+				}
+				shouldSave = true
+				return
 			}
-
-			if err := t.InstanceManager.Update(ctx, inst); err != nil {
+			if err := t.InstanceManager.LambdaUpdate(ctx, instanceID, lambda); err != nil {
 				logger.Error("Cannot update instance status",
 					zap.Error(err),
 				)

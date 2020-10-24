@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/zllovesuki/rmc/auth"
 	"github.com/zllovesuki/rmc/host"
@@ -78,6 +79,10 @@ func (s *Service) getInstance(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Add("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(inst)
+}
+
+func (s *Service) listInstances(w http.ResponseWriter, r *http.Request) {
+
 }
 
 // ControlRequest contains the request from client to control an existing instance.
@@ -333,6 +338,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		IsJavaEdition:  req.IsJavaEdition,
 		State:          StateProvisioning,
 		Status:         StatusActive,
+		CreatedAt:      time.Now(),
 	}
 
 	if err := s.InstanceManager.Create(ctx, &inst); err != nil {
@@ -366,6 +372,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 func (s *Service) Router() http.Handler {
 	r := chi.NewRouter().With(auth.ClaimCheck(s.Logger))
 
+	r.Get("/", s.listInstances)
 	r.Post("/", s.newInstance)
 	r.Get("/{id}", s.getInstance)
 	r.Post("/{id}", s.controlInstance)
