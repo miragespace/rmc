@@ -1,6 +1,7 @@
 package customer
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -60,7 +61,8 @@ func (s *Service) requestLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Auth.Request(r.Context(), req.Email, req.Email); err != nil {
+	b64Email := base64.StdEncoding.EncodeToString([]byte(req.Email))
+	if err := s.Auth.Request(r.Context(), b64Email, req.Email); err != nil {
 		logger.Error("Unable to send login PIN",
 			zap.Error(err),
 		)
@@ -73,12 +75,20 @@ func (s *Service) requestLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	email := chi.URLParam(r, "uid")
+	b64Email := chi.URLParam(r, "uid")
 	token := chi.URLParam(r, "token")
+
+	emailBytes, err := base64.StdEncoding.DecodeString(b64Email)
+	if err != nil {
+		http.Error(w, "invalid uid", http.StatusBadRequest)
+		return
+	}
+
+	email := string(emailBytes)
 
 	logger := s.Logger.With(zap.String("email", email))
 
-	valid, err := s.Auth.Verify(r.Context(), email, token)
+	valid, err := s.Auth.Verify(r.Context(), b64Email, token)
 	if err != nil {
 		logger.Error("Unable to verify login PIN",
 			zap.Error(err),

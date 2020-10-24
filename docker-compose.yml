@@ -33,6 +33,7 @@ services:
         "
         docker-entrypoint.sh
         --requirepass rmc
+        --appendonly yes
         ",
       ]
     ports:
