@@ -3,6 +3,8 @@ package docker
 import (
 	"context"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"strconv"
 	"strings"
 	"time"
@@ -40,11 +42,11 @@ func NewClient(option Options) (*Client, error) {
 }
 
 func (c *Client) ProvisionInstance(ctx context.Context, p *protocol.Instance) error {
-	// TESTING
-	_, err := c.Client.ImagePull(ctx, spec.JavaMinecraftDockerImage, types.ImagePullOptions{})
+	out, err := c.Client.ImagePull(ctx, spec.JavaMinecraftDockerImage, types.ImagePullOptions{})
 	if err != nil {
 		return err
 	}
+	io.Copy(ioutil.Discard, out) // needed to make sure image pull was done. TODO: ensure image existence when starting host worker
 
 	// Reference: https://medium.com/backendarmy/controlling-the-docker-engine-in-go-d25fc0fe2c45
 
@@ -163,7 +165,7 @@ func (c *Client) StatsInstances(ctx context.Context) (stats Stats, err error) {
 	for _, container := range containers {
 		for _, name := range container.Names {
 			if strings.HasPrefix(name, "/rmc-instance-") {
-				switch container.Status {
+				switch container.State {
 				case "running", "removing", "restarting":
 					stats.Running++
 				default:
