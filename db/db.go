@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"time"
 
 	"github.com/pkg/errors"
@@ -11,16 +12,30 @@ import (
 	"moul.io/zapgorm2"
 )
 
+type patchedLogger struct {
+	zapgorm2.Logger
+}
+
+// ErrRecordNotFound will be handled in application logic, let's not forward this to zap/sentry
+func (l *patchedLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	if err == gorm.ErrRecordNotFound {
+		return
+	}
+	l.Logger.Trace(ctx, begin, fc, err)
+}
+
 // New returns an instance for interacting with the PostgreSQL database
 func New(logger *zap.Logger, uri string) (*gorm.DB, error) {
-	gLogger := &zapgorm2.Logger{
+	gLogger := zapgorm2.Logger{
 		ZapLogger:        logger,
 		LogLevel:         gormlogger.Warn,
 		SlowThreshold:    time.Second,
 		SkipCallerLookup: false,
 	}
 	db, err := gorm.Open(postgres.Open(uri), &gorm.Config{
-		Logger: gLogger,
+		Logger: &patchedLogger{
+			Logger: gLogger,
+		},
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "Cannot connect to database")
