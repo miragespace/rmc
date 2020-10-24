@@ -1,6 +1,6 @@
 COMMIT_HASH := $(shell git rev-parse --short HEAD)
 
-all: build_api build_host
+all: build_api build_worker
 
 proto:
 	docker build -t protogen -f Dockerfile.protogen .
@@ -9,10 +9,11 @@ proto:
 
 build_api:
 	go build -ldflags "-X 'main.Version=$(COMMIT_HASH)'" -o bin/api ./cmd/api
+	go build -ldflags "-X 'main.Version=$(COMMIT_HASH)'" -o bin/task ./cmd/task
 
-build_host:
-	go build -ldflags "-X 'main.Version=$(COMMIT_HASH)'" -o bin/host ./cmd/host
-	GOOS=windows go build -ldflags "-X 'main.Version=$(COMMIT_HASH)'" -o bin/host.exe ./cmd/host
+build_worker:
+	go build -ldflags "-X 'main.Version=$(COMMIT_HASH)'" -o bin/worker ./cmd/worker
+	GOOS=windows go build -ldflags "-X 'main.Version=$(COMMIT_HASH)'" -o bin/worker.exe ./cmd/worker
 
 psql:
 	docker exec -ti rmc-postgres psql -U rmc

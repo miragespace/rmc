@@ -53,13 +53,25 @@ services:
     ports:
       - 42069:42069
 
-  host:
-    container_name: host
+  task:
+    container_name: task
+    depends_on:
+      - postgres
+      - rabbit
+    image: golang:1.15.3-alpine
+    volumes:
+      - .:/go/src/rmc
+    working_dir: /go/src/rmc
+    command: go run ./cmd/task
+    restart: always
+
+  worker:
+    container_name: worker
     depends_on:
       - rabbit
     image: golang:1.15.3-alpine
     volumes:
       - .:/go/src/rmc
     working_dir: /go/src/rmc
-    command: go run ./cmd/host
+    command: go run ./cmd/worker
     restart: always
