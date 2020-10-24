@@ -104,7 +104,7 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	if cust == nil {
 		// new customer! yay
-		cust, err = s.CustomerManager.NewCustomer(ctx, email)
+		cust, err = s.CustomerManager.New(ctx, email)
 		if err != nil {
 			logger.Error("Unable to create Customer",
 				zap.Error(err),

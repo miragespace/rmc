@@ -6,43 +6,69 @@ import (
 
 	extErrors "github.com/pkg/errors"
 	"github.com/stripe/stripe-go/v71"
-	"github.com/stripe/stripe-go/v71/customer"
+	"github.com/stripe/stripe-go/v71/client"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Manager handles the database operations relating to Customers
 type Manager struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	stripeClient *client.API
+	db           *gorm.DB
+	logger       *zap.Logger
 }
 
 // NewManager returns a new Manager for customers
-func NewManager(logger *zap.Logger, db *gorm.DB) (*Manager, error) {
+func NewManager(logger *zap.Logger, db *gorm.DB, s *client.API) (*Manager, error) {
 	if err := db.AutoMigrate(&Customer{}); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot initilize customer.Manager")
 	}
 	return &Manager{
-		db:     db,
-		logger: logger,
+		stripeClient: s,
+		db:           db,
+		logger:       logger,
 	}, nil
 }
 
-// NewCustomer will create a new customer profile in Stripe and in the database
-func (m *Manager) NewCustomer(ctx context.Context, email string) (*Customer, error) {
-	params := &stripe.CustomerParams{
-		Params: stripe.Params{
+// New will create a new customer profile in Stripe and in the database
+func (m *Manager) New(ctx context.Context, email string) (*Customer, error) {
+	listParams := &stripe.CustomerListParams{
+		ListParams: stripe.ListParams{
 			Context: ctx,
 		},
 		Email: stripe.String(email),
 	}
+	listParams.Filters.AddFilter("limit", "", "1")
+	l := m.stripeClient.Customers.List(listParams)
 
-	c, err := customer.New(params)
-	if err != nil {
+	if l.Err() != nil {
 		m.logger.Error("Stripe returned error",
-			zap.Error(err),
+			zap.Error(l.Err()),
 		)
-		return nil, extErrors.Wrap(err, "Cannot create a new Customer")
+		return nil, extErrors.Wrap(l.Err(), "Cannot query customer by email to Stripe")
+	}
+
+	var c *stripe.Customer
+	for l.Next() {
+		c = l.Customer()
+	}
+
+	if c == nil {
+		// actually a new customer
+		var err error
+		params := &stripe.CustomerParams{
+			Params: stripe.Params{
+				Context: ctx,
+			},
+			Email: stripe.String(email),
+		}
+		c, err = m.stripeClient.Customers.New(params)
+		if err != nil {
+			m.logger.Error("Stripe returned error",
+				zap.Error(err),
+			)
+			return nil, extErrors.Wrap(err, "Cannot create a new Customer")
+		}
 	}
 
 	newCustomer := &Customer{
