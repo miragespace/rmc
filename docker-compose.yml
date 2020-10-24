@@ -72,6 +72,7 @@ services:
     image: golang:1.15.3-alpine
     volumes:
       - .:/go/src/rmc
+      - /var/run/docker.sock:/var/run/docker.sock # FOR TESTING ONLY, DON'T ACTUALLY RUN IT IN PRODUCTION
     working_dir: /go/src/rmc
     command: go run ./cmd/worker
     restart: always

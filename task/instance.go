@@ -6,6 +6,7 @@ import (
 
 	"github.com/zllovesuki/rmc/instance"
 	"github.com/zllovesuki/rmc/spec/broker"
+	"github.com/zllovesuki/rmc/spec/protocol"
 
 	extErrors "github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -62,7 +63,32 @@ func (t *InstanceTask) HandleReply(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case pReply := <-pChan:
-				// TODO: handle provision reply from host
+				// TESTING
+				logger := t.Logger.With(
+					zap.String("InstanceID", pReply.GetInstance().GetInstanceID()),
+				)
+				inst, err := t.InstanceManager.GetByID(ctx, pReply.GetInstance().GetInstanceID())
+				if err != nil {
+					logger.Error("Cannot get instance by ID when processing provision reply",
+						zap.Error(err),
+					)
+					continue
+				}
+				if inst == nil {
+					logger.Error("nil Instance when processing provision reply")
+					continue
+				}
+				if pReply.GetResult() == protocol.ProvisionReply_SUCCESS {
+					inst.State = instance.StateRunning
+					// TODO: update server addr/port
+				} else {
+					inst.State = instance.StateUnknown
+				}
+				if err := t.InstanceManager.Update(ctx, inst); err != nil {
+					logger.Error("Cannot update instance status",
+						zap.Error(err),
+					)
+				}
 				fmt.Println(pReply)
 			}
 		}

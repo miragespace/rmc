@@ -245,15 +245,33 @@ func (s *Service) Router() http.Handler {
 	r.Get("/test", func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		claims := ctx.Value(auth.Context).(*auth.Claims)
-		if err := s.Producer.SendControlRequest(&host.Host{
+		fakeInstance := &Instance{
+			ID:             uuid.New().String(),
+			CustomerID:     claims.ID,
+			SubscriptionID: uuid.New().String(),
+			ServerVersion:  "1.16.3",
+			IsJavaEdition:  true,
+			State:          StateProvisioning,
+			Status:         StatusActive,
+		}
+		if err := s.InstanceManager.Create(ctx, fakeInstance); err != nil {
+			s.Logger.Error("Unable to create fake instance",
+				zap.Error(err),
+			)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if err := s.Producer.SendProvisionRequest(&host.Host{
 			Name: "test",
-		}, &protocol.ControlRequest{
+		}, &protocol.ProvisionRequest{
 			Instance: &protocol.Instance{
-				InstanceID: "test-instance",
+				InstanceID:    fakeInstance.ID,
+				Version:       fakeInstance.ServerVersion,
+				IsJavaEdition: fakeInstance.IsJavaEdition,
 			},
-			Action: protocol.ControlRequest_START,
+			Action: protocol.ProvisionRequest_CREATE,
 		}); err != nil {
-			s.Logger.Error("Unable to send test request",
+			s.Logger.Error("Unable to send provision test request",
 				zap.Error(err),
 			)
 			http.Error(w, "internal server error", http.StatusInternalServerError)

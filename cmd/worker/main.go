@@ -9,9 +9,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/docker/docker/client"
 	"github.com/zllovesuki/rmc/auth"
 	"github.com/zllovesuki/rmc/broker"
 	"github.com/zllovesuki/rmc/host"
+	"github.com/zllovesuki/rmc/host/worker/docker"
 	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/protocol"
 
@@ -81,11 +83,28 @@ func main() {
 
 	amqpBroker, err := broker.NewAMQPBroker(os.Getenv("AMQP_URI"))
 	if err != nil {
-		log.Fatal("Cannot connect to Broker",
+		logger.Fatal("Cannot connect to Broker",
 			zap.Error(err),
 		)
 	}
 	defer amqpBroker.Close()
+
+	dockerCli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		logger.Fatal("Cannot connect to docker daemon",
+			zap.Error(err),
+		)
+	}
+
+	docker, err := docker.NewClient(docker.Options{
+		Client: dockerCli,
+		Logger: logger,
+	})
+	if err != nil {
+		logger.Fatal("Cannot initialize internal docker client",
+			zap.Error(err),
+		)
+	}
 
 	// TESTING
 	c := make(chan os.Signal, 1)
@@ -93,18 +112,19 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	crChan, err := amqpBroker.ReceiveControlRequest(ctx, &host.Host{
-		Name: "test",
-	})
+	currentHost := &host.Host{
+		Name:     "test",
+		Capacity: 20,
+	}
+
+	crChan, err := amqpBroker.ReceiveControlRequest(ctx, currentHost)
 	if err != nil {
 		log.Fatal("Cannot get message channel",
 			zap.Error(err),
 		)
 	}
 
-	prChan, err := amqpBroker.ReceiveProvisionRequest(ctx, &host.Host{
-		Name: "test",
-	})
+	prChan, err := amqpBroker.ReceiveProvisionRequest(ctx, currentHost)
 	if err != nil {
 		log.Fatal("Cannot get message channel",
 			zap.Error(err),
@@ -118,10 +138,17 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-tick:
+				instances, err := docker.ListInstances(ctx)
+				if err != nil {
+					logger.Error("Cannot get instance list",
+						zap.Error(err),
+					)
+				}
+				logger.Info("ListInstances", zap.Int("len", len(instances)))
 				amqpBroker.SendHeartbeat(&protocol.Heartbeat{
 					Host: &protocol.Host{
 						Name:     "test",
-						Running:  0,
+						Running:  int64(len(instances)),
 						Stopped:  0,
 						Capacity: 20,
 					},
@@ -158,12 +185,24 @@ func main() {
 				return
 			case d := <-prChan:
 				fmt.Println(d)
-				if err := amqpBroker.SendProvisionReply(&protocol.ProvisionReply{
+				if d.GetAction() != protocol.ProvisionRequest_CREATE {
+					continue
+				}
+				reply := &protocol.ProvisionReply{
 					Instance: &protocol.Instance{
-						InstanceID: "test-instance",
+						InstanceID: d.GetInstance().GetInstanceID(),
 					},
-					Result: protocol.ProvisionReply_SUCCESS,
-				}); err != nil {
+				}
+				if err := docker.ProvisionInstance(ctx, d.GetInstance()); err != nil {
+					logger.Error("Cannot provision instance",
+						zap.Error(err),
+					)
+					reply.Result = protocol.ProvisionReply_FAILURE
+				} else {
+					reply.Result = protocol.ProvisionReply_SUCCESS
+				}
+
+				if err := amqpBroker.SendProvisionReply(reply); err != nil {
 					logger.Error("Cannot send provision reply",
 						zap.Error(err),
 					)

@@ -4,5 +4,6 @@ import "time"
 
 // Define constants for both API and Hosts
 const (
-	HeartbeatInterval time.Duration = time.Second * 15
+	HeartbeatInterval        time.Duration = time.Second * 15
+	JavaMinecraftDockerImage string        = "itzg/minecraft-server"
 )
