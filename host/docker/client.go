@@ -20,6 +20,10 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	managedInstancePrefix = "/rmc-instance-"
+)
+
 type Options struct {
 	Client *client.Client
 	Logger *zap.Logger
@@ -74,8 +78,8 @@ func (c *Client) ProvisionInstance(ctx context.Context, p *protocol.Instance) er
 		&container.HostConfig{
 			PortBindings: portBinding,
 		},
-		nil,                               // network config
-		"rmc-instance-"+p.GetInstanceID(), // TODO: use a function to generate
+		nil, // network config
+		managedInstancePrefix+p.GetInstanceID(), // TODO: use a function to generate
 	)
 
 	if err != nil {
@@ -113,7 +117,7 @@ func (c *Client) getContainerID(ctx context.Context, instanceID string) (string,
 
 	for _, container := range containers {
 		for _, name := range container.Names {
-			if name == "/rmc-instance-"+instanceID {
+			if name == "/"+managedInstancePrefix+instanceID {
 				id = container.ID
 			}
 		}
@@ -164,7 +168,7 @@ func (c *Client) StatsInstances(ctx context.Context) (stats Stats, err error) {
 
 	for _, container := range containers {
 		for _, name := range container.Names {
-			if strings.HasPrefix(name, "/rmc-instance-") {
+			if strings.HasPrefix(name, "/"+managedInstancePrefix) {
 				switch container.State {
 				case "running", "removing", "restarting":
 					stats.Running++
