@@ -76,10 +76,6 @@ func (m *Manager) GetBySubscriptionId(ctx context.Context, sid string) (*Instanc
 	return &inst, nil
 }
 
-func (m *Manager) ListByCustomerID(ctx context.Context, cid string) ([]*Instance, error) {
-	panic("not implemented")
-}
-
 func (m *Manager) Update(ctx context.Context, inst *Instance) error {
 	result := m.db.WithContext(ctx).Save(inst)
 
@@ -93,23 +89,38 @@ func (m *Manager) Update(ctx context.Context, inst *Instance) error {
 }
 
 // LambdaUpdateFunc is used when transaction is required for update. Return value determines if InstanceManager should commit the changes.
-// Note that currentState may be nil, and must return false if currentState is nil
+// Note that currentState and desiredState may be nil if no Instance with given id was found, and must return false if that is the case
 type LambdaUpdateFunc func(currentState *Instance, desiredState *Instance) (shouldSave bool)
 
-func (m *Manager) LambdaUpdate(ctx context.Context, id string, lambda LambdaUpdateFunc) error {
-	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+// LambdaUpdate will perform a transactional update based on the lambda function. If the lambda signals shouldSave AND update was successful, it will return the new state.
+func (m *Manager) LambdaUpdate(ctx context.Context, id string, lambda LambdaUpdateFunc) (*Instance, error) {
+	var desiredState Instance
+	var shouldReturn bool
+	err := m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var currentState Instance
 		lookupRes := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&currentState, "id = ?", id)
-		if lookupRes.Error == nil || errors.Is(lookupRes.Error, gorm.ErrRecordNotFound) {
-			var desiredState Instance = currentState
+		if lookupRes.Error == nil {
+			desiredState = currentState
 			if lambda(&currentState, &desiredState) {
-				saveRes := tx.Save(&desiredState)
-				return saveRes.Error
+				if saveRes := tx.Save(&desiredState); saveRes.Error != nil {
+					return saveRes.Error
+				}
+				shouldReturn = true
 			}
+			return nil
+		} else if errors.Is(lookupRes.Error, gorm.ErrRecordNotFound) {
+			lambda(nil, nil)
 			return nil
 		}
 		return lookupRes.Error
 	})
+	if err != nil {
+		return nil, err
+	}
+	if shouldReturn {
+		return &desiredState, nil
+	}
+	return nil, nil
 }

@@ -77,7 +77,7 @@ func (t *InstanceTask) handleControlReply(ctx context.Context, cChan <-chan *pro
 				shouldSave = true
 				return
 			}
-			if err := t.InstanceManager.LambdaUpdate(ctx, instanceID, lambda); err != nil {
+			if _, err := t.InstanceManager.LambdaUpdate(ctx, instanceID, lambda); err != nil {
 				logger.Error("Cannot update instance status",
 					zap.Error(err),
 				)
@@ -129,7 +129,7 @@ func (t *InstanceTask) handleProvisionReply(ctx context.Context, pChan <-chan *p
 				shouldSave = true
 				return
 			}
-			if err := t.InstanceManager.LambdaUpdate(ctx, instanceID, lambda); err != nil {
+			if _, err := t.InstanceManager.LambdaUpdate(ctx, instanceID, lambda); err != nil {
 				logger.Error("Cannot update instance status",
 					zap.Error(err),
 				)

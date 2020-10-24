@@ -185,57 +185,58 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		zap.String("InstanceID", instanceID),
 	)
 
-	inst, err := s.InstanceManager.GetByID(ctx, instanceID)
+	lambda := func(currentState *Instance, desireState *Instance) (shouldSave bool) {
+		if currentState == nil || currentState.CustomerID != claims.ID || currentState.Status != StatusActive {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		if currentState.State != StateStopped {
+			http.Error(w, "cannot delete when it is running", http.StatusBadRequest)
+			return
+		}
+		logger = logger.With(
+			zap.String("SubscriptionID", currentState.SubscriptionID),
+			zap.String("HostName", currentState.HostName),
+		)
+
+		host, err := s.HostManager.GetHostByName(ctx, currentState.HostName)
+		if err != nil {
+			logger.Error("Unable to get instance Host",
+				zap.Error(err),
+			)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		if err := s.Producer.SendProvisionRequest(host, &protocol.ProvisionRequest{
+			Instance: &protocol.Instance{
+				InstanceID: currentState.ID,
+			},
+			Action: protocol.ProvisionRequest_DELETE,
+		}); err != nil {
+			logger.Error("Unable to send DELETE provision request",
+				zap.Error(err),
+			)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		desireState.Status = StatusTerminated
+		shouldSave = true
+		return
+	}
+
+	inst, err := s.InstanceManager.LambdaUpdate(ctx, instanceID, lambda)
 	if err != nil {
-		logger.Error("Unable to query instance",
+		logger.Error("Unable to delete instance",
 			zap.Error(err),
 		)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	if inst == nil || inst.CustomerID != claims.ID || inst.Status != StatusActive {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-
-	if inst.State != StateStopped {
-		http.Error(w, "cannot delete when it is running", http.StatusBadRequest)
-		return
-	}
-
-	logger = logger.With(
-		zap.String("SubscriptionID", inst.SubscriptionID),
-		zap.String("HostName", inst.HostName),
-	)
-
-	host, err := s.HostManager.GetHostByName(ctx, inst.HostName)
-	if err != nil {
-		logger.Error("Unable to get instance Host",
-			zap.Error(err),
-		)
-	}
-
-	if err := s.Producer.SendProvisionRequest(host, &protocol.ProvisionRequest{
-		Instance: &protocol.Instance{
-			InstanceID: inst.ID,
-		},
-		Action: protocol.ProvisionRequest_DELETE,
-	}); err != nil {
-		logger.Error("Unable to send provision DELETE request",
-			zap.Error(err),
-		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	inst.Status = StatusTerminated
-
-	if err := s.InstanceManager.Update(ctx, inst); err != nil {
-		logger.Error("Unable to update instance status for DELETE",
-			zap.Error(err),
-		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+	if inst == nil {
 		return
 	}
 
@@ -357,7 +358,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		},
 		Action: protocol.ProvisionRequest_CREATE,
 	}); err != nil {
-		logger.Error("Unable to send provision CREATE request",
+		logger.Error("Unable to send CREATE provision request",
 			zap.Error(err),
 		)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
