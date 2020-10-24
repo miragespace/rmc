@@ -82,7 +82,25 @@ func (s *Service) getInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) listInstances(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	claims := ctx.Value(auth.Context).(*auth.Claims)
+	all := r.URL.Query().Get("all") != ""
 
+	logger := s.Logger.With(
+		zap.String("CustomerID", claims.ID),
+	)
+
+	results, err := s.InstanceManager.List(ctx, claims.ID, all)
+	if err != nil {
+		logger.Error("Unable to list instances by customer id",
+			zap.Error(err),
+		)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Add("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
 }
 
 // ControlRequest contains the request from client to control an existing instance.
@@ -100,56 +118,66 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 		zap.String("InstanceID", instanceID),
 	)
 
-	inst, err := s.InstanceManager.GetByID(ctx, instanceID)
-	if err != nil {
-		logger.Error("Unable to query instance",
-			zap.Error(err),
-		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	if inst == nil || inst.CustomerID != claims.ID || inst.Status != StatusActive {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-
-	logger = logger.With(
-		zap.String("SubscriptionID", inst.SubscriptionID),
-		zap.String("HostName", inst.HostName),
-	)
-
 	var req ControlRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	var action protocol.ControlRequest_ControlAction
-	var nextState string
-	switch req.Action {
-	case "Start":
-		if inst.State != StateStopped {
-			http.Error(w, "instance not in stopped state", http.StatusBadRequest)
+	lambda := func(currenState *Instance, desiredState *Instance) (shouldSave bool) {
+		if currenState == nil || currenState.CustomerID != claims.ID || currenState.Status != StatusActive {
+			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		action = protocol.ControlRequest_START
-		nextState = StateStarting
-	case "Stop":
-		if inst.State != StateRunning {
-			http.Error(w, "instance not in running state", http.StatusBadRequest)
+		logger = logger.With(
+			zap.String("HostName", currenState.HostName),
+		)
+
+		var action protocol.ControlRequest_ControlAction
+		var nextState string
+		switch req.Action {
+		case "Start":
+			if currenState.State != StateStopped {
+				http.Error(w, "instance not in stopped state", http.StatusBadRequest)
+				return
+			}
+			action = protocol.ControlRequest_START
+			nextState = StateStarting
+		case "Stop":
+			if currenState.State != StateRunning {
+				http.Error(w, "instance not in running state", http.StatusBadRequest)
+				return
+			}
+			action = protocol.ControlRequest_STOP
+			nextState = StateStopping
+		default:
+			http.Error(w, "unknown action", http.StatusBadRequest)
 			return
 		}
-		action = protocol.ControlRequest_STOP
-		nextState = StateStopping
-	default:
-		http.Error(w, "unknown action", http.StatusBadRequest)
+
+		if err := s.Producer.SendControlRequest(&host.Host{
+			Name: currenState.HostName,
+		}, &protocol.ControlRequest{
+			Instance: &protocol.Instance{
+				InstanceID: currenState.ID,
+			},
+			Action: action,
+		}); err != nil {
+			logger.Error("Unable to send control request",
+				zap.Error(err),
+			)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		desiredState.State = nextState
+		shouldSave = true
 		return
 	}
 
-	inst.State = nextState
+	inst, err := s.InstanceManager.LambdaUpdate(ctx, instanceID, lambda)
 
-	if err := s.InstanceManager.Update(ctx, inst); err != nil {
+	if err != nil {
 		logger.Error("Unable to update instance status",
 			zap.Error(err),
 		)
@@ -157,18 +185,8 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Producer.SendControlRequest(&host.Host{
-		Name: inst.HostName,
-	}, &protocol.ControlRequest{
-		Instance: &protocol.Instance{
-			InstanceID: inst.ID,
-		},
-		Action: action,
-	}); err != nil {
-		logger.Error("Unable to send control request",
-			zap.Error(err),
-		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+	if inst == nil {
+		// response was already sent in lambda
 		return
 	}
 
@@ -196,7 +214,6 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		logger = logger.With(
-			zap.String("SubscriptionID", currentState.SubscriptionID),
 			zap.String("HostName", currentState.HostName),
 		)
 
@@ -237,13 +254,15 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if inst == nil {
+		// response was already sent in lambda
 		return
 	}
 
 	if err := s.SubscriptionManager.CancelSubscription(ctx, inst.SubscriptionID); err != nil {
-		logger.Error("Unable to cancel Stripe Subscription",
-			zap.Error(err),
-		)
+		logger.With(zap.String("SubscriptionID", inst.SubscriptionID)).
+			Error("Unable to cancel Stripe Subscription",
+				zap.Error(err),
+			)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}

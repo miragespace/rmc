@@ -88,6 +88,22 @@ func (m *Manager) Update(ctx context.Context, inst *Instance) error {
 	return nil
 }
 
+func (m *Manager) List(ctx context.Context, cid string, all bool) ([]Instance, error) {
+	results := make([]Instance, 0, 1)
+	baseQuery := m.db.WithContext(ctx).Order("created_at desc")
+	if !all {
+		baseQuery = baseQuery.Where("status = ?", StatusActive)
+	}
+	result := baseQuery.Find(&results, "customer_id = ?", cid)
+	if result.Error != nil {
+		m.logger.Error("Database returned error",
+			zap.Error(result.Error),
+		)
+		return nil, result.Error
+	}
+	return results, nil
+}
+
 // LambdaUpdateFunc is used when transaction is required for update. Return value determines if InstanceManager should commit the changes.
 // Note that currentState and desiredState may be nil if no Instance with given id was found, and must return false if that is the case
 type LambdaUpdateFunc func(currentState *Instance, desiredState *Instance) (shouldSave bool)
@@ -117,10 +133,13 @@ func (m *Manager) LambdaUpdate(ctx context.Context, id string, lambda LambdaUpda
 		return lookupRes.Error
 	})
 	if err != nil {
+		// transaction failed, return nil new state
 		return nil, err
 	}
-	if shouldReturn {
-		return &desiredState, nil
+	if !shouldReturn {
+		// shouldSave == false, return nil new state
+		return nil, nil
 	}
-	return nil, nil
+	// transaction succeed and shouldSave == true, return new state
+	return &desiredState, nil
 }
