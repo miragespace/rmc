@@ -43,7 +43,7 @@ func main() {
 	var err error
 
 	// Determine running environment and initialize structural logger
-	env := os.Getenv("API_ENV")
+	env := os.Getenv("ENV")
 	if "production" == env {
 		dotFile = ".env.production"
 		authEnvironment = auth.EnvProduction
@@ -58,21 +58,13 @@ func main() {
 		log.Fatalf("Cannot initialize logger: %v\n", err)
 	}
 	logger = logger.With(zap.String("Version", Version))
-	defer logger.Sync()
-
-	// Load configurations from dotFile
-	if err := godotenv.Load(dotFile); err != nil {
-		logger.Fatal("Cannot load configurations from .env",
-			zap.Error(err),
-		)
-	}
 
 	// Initialize sentry for error reporting
 	if err := sentry.Init(sentry.ClientOptions{
 		Environment: string(authEnvironment),
 		Debug:       authEnvironment == auth.EnvDevelopment,
 	}); err != nil {
-		logger.Fatal("Cannot initialize sentry",
+		log.Fatal("Cannot initialize sentry",
 			zap.Error(err),
 		)
 	}
@@ -87,6 +79,15 @@ func main() {
 	}
 	core, err := zapsentry.NewCore(cfg, zapsentry.NewSentryClientFromClient(sentry.CurrentHub().Client()))
 	logger = zapsentry.AttachCoreToLogger(core, logger)
+
+	defer logger.Sync()
+
+	// Load configurations from dotFile
+	if err := godotenv.Load(dotFile); err != nil {
+		logger.Fatal("Cannot load configurations from .env",
+			zap.Error(err),
+		)
+	}
 
 	// a Stripe client will allow us to mock testing
 	stripeClient := external.NewStripeClient(os.Getenv("STRIPE_KEY"))
