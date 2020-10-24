@@ -106,6 +106,7 @@ func main() {
 	}
 
 	// TODO: define it from env variables
+	// TODO: get server IP
 	currentHost := &host.Host{
 		Name:     "test",
 		Capacity: 20,
@@ -116,6 +117,7 @@ func main() {
 		Logger:   logger,
 		Consumer: amqpBroker,
 		Host:     currentHost,
+		HostIP:   "127.0.0.1",
 	})
 	if err != nil {
 		logger.Fatal("Cannot initialize Controller",

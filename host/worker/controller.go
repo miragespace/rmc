@@ -10,6 +10,7 @@ import (
 	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
+	"github.com/zllovesuki/rmc/util"
 
 	"go.uber.org/zap"
 )
@@ -19,6 +20,7 @@ type Options struct {
 	Logger   *zap.Logger
 	Consumer broker.Consumer
 	Host     *host.Host
+	HostIP   string
 }
 
 type Controller struct {
@@ -40,6 +42,9 @@ func NewController(option Options) (*Controller, error) {
 	}
 	if option.Host == nil {
 		return nil, fmt.Errorf("nil Host is invalid")
+	}
+	if len(option.HostIP) == 0 {
+		return nil, fmt.Errorf("empty host ip is invalid")
 	}
 	return &Controller{
 		Options: option,
@@ -73,12 +78,43 @@ func (c *Controller) processControlRequest(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case d := <-c.controlRequest:
-			fmt.Println(d)
+			if d.GetInstance() == nil {
+				c.Logger.Error("Received provision request with nil Instance")
+				continue
+			}
+			if d.GetInstance().GetInstanceID() == "" {
+				c.Logger.Error("Received provision request with empty InstanceID")
+				continue
+			}
+
+			logger := c.Logger.With(
+				zap.String("InstanceID", d.GetInstance().GetInstanceID()),
+				zap.String("Action", d.GetAction().String()),
+			)
+			var err error
+			switch d.GetAction() {
+			case protocol.ControlRequest_STOP:
+				err = c.Docker.StopInstance(ctx, d.GetInstance())
+			case protocol.ControlRequest_START:
+				err = c.Docker.StartInstance(ctx, d.GetInstance())
+			default:
+				logger.Error("Received unknown request")
+				continue
+			}
+
+			var result protocol.ControlReply_ControlResult
+			if err != nil {
+				logger.Error("Cannot control instance",
+					zap.Error(err),
+				)
+				result = protocol.ControlReply_FAILURE
+			} else {
+				result = protocol.ControlReply_SUCCESS
+			}
+
 			if err := c.Consumer.SendControlReply(&protocol.ControlReply{
-				Instance: &protocol.Instance{
-					InstanceID: "test-instance",
-				},
-				Result: protocol.ControlReply_SUCCESS,
+				Instance: d.GetInstance(),
+				Result:   result,
 			}); err != nil {
 				c.Logger.Error("Cannot send control reply",
 					zap.Error(err),
@@ -94,23 +130,59 @@ func (c *Controller) processProvisionRequest(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case d := <-c.provisionRequest:
-			fmt.Println(d)
-			if d.GetAction() != protocol.ProvisionRequest_CREATE {
+			if d.GetInstance() == nil {
+				c.Logger.Error("Received provision request with nil Instance")
 				continue
 			}
+			if d.GetInstance().GetInstanceID() == "" {
+				c.Logger.Error("Received provision request with empty InstanceID")
+				continue
+			}
+
+			logger := c.Logger.With(
+				zap.String("InstanceID", d.GetInstance().GetInstanceID()),
+				zap.String("Action", d.GetAction().String()),
+			)
+			var err error
+			var freePort int
+			switch d.GetAction() {
+			case protocol.ProvisionRequest_DELETE:
+				// TODO: timeout or force delete
+				err = c.Docker.DeleteInstance(ctx, d.GetInstance())
+			case protocol.ProvisionRequest_CREATE:
+				freePort, err = util.GetFreePort()
+				if err != nil {
+					logger.Error("Cannot get a random port for provisioning",
+						zap.Error(err),
+					)
+					break
+				}
+				d.Instance.Port = uint32(freePort)
+				err = c.Docker.ProvisionInstance(ctx, d.GetInstance())
+			default:
+				logger.Error("Received unknown request")
+				continue
+			}
+
+			// TODO: questionable control flow, revisit this
 			reply := &protocol.ProvisionReply{
 				Instance: &protocol.Instance{
 					InstanceID: d.GetInstance().GetInstanceID(),
 				},
 			}
-			if err := c.Docker.ProvisionInstance(ctx, d.GetInstance()); err != nil {
-				c.Logger.Error("Cannot provision instance",
+			var result protocol.ProvisionReply_ProvisionResult
+			if err != nil {
+				logger.Error("Cannot provision instance",
 					zap.Error(err),
 				)
-				reply.Result = protocol.ProvisionReply_FAILURE
+				result = protocol.ProvisionReply_FAILURE
 			} else {
-				reply.Result = protocol.ProvisionReply_SUCCESS
+				result = protocol.ProvisionReply_SUCCESS
+				reply.Instance.Addr = c.HostIP
+				reply.Instance.Port = uint32(freePort)
 			}
+
+			reply.Result = result
 
 			if err := c.Consumer.SendProvisionReply(reply); err != nil {
 				c.Logger.Error("Cannot send provision reply",

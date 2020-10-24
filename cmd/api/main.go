@@ -173,7 +173,11 @@ func main() {
 		)
 	}
 
-	subscriptionManager, err := subscription.NewManager(logger, stripeClient)
+	subscriptionManager, err := subscription.NewManager(subscription.ManagerOptions{
+		Auth:         auth,
+		StripeClient: stripeClient,
+		Logger:       logger,
+	})
 	if err != nil {
 		logger.Fatal("Cannot initialize SubscriptionManager",
 			zap.Error(err),
@@ -181,7 +185,7 @@ func main() {
 	}
 
 	// Initialize servce routers
-	customerRouter, err := customer.NewService(customer.Options{
+	customerRouter, err := customer.NewService(customer.ServiceOptions{
 		Auth:            auth,
 		CustomerManager: customerManager,
 		Logger:          logger,
@@ -192,7 +196,7 @@ func main() {
 		)
 	}
 
-	instanceRouter, err := instance.NewService(instance.Options{
+	instanceRouter, err := instance.NewService(instance.ServiceOptions{
 		SubscriptionManager: subscriptionManager,
 		HostManager:         hostManager,
 		InstanceManager:     instanceManager,
@@ -205,7 +209,7 @@ func main() {
 		)
 	}
 
-	subscriptionRouter, err := subscription.NewService(subscription.Options{
+	subscriptionRouter, err := subscription.NewService(subscription.ServiceOptions{
 		Logger: logger,
 	})
 	if err != nil {

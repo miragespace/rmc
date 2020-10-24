@@ -6,4 +6,5 @@ import "time"
 const (
 	HeartbeatInterval        time.Duration = time.Second * 15
 	JavaMinecraftDockerImage string        = "itzg/minecraft-server"
+	JavaMinecraftTCPPort     string        = "25565"
 )

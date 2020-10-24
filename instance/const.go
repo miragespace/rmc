@@ -3,6 +3,7 @@ package instance
 // Define the valid state of an instance
 const (
 	StateUnknown      string = "Unknown"
+	StateError               = "Error"
 	StateRunning             = "Running"
 	StateStarting            = "Starting"
 	StateStopped             = "Stopped"
