@@ -224,18 +224,18 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.SubscriptionManager.CancelSubscription(ctx, inst.SubscriptionID); err != nil {
-		logger.Error("Unable to cancel Stripe Subscription",
+	inst.Status = StatusTerminated
+
+	if err := s.InstanceManager.Update(ctx, inst); err != nil {
+		logger.Error("Unable to update instance status for DELETE",
 			zap.Error(err),
 		)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	inst.Status = StatusTerminated
-
-	if err := s.InstanceManager.Update(ctx, inst); err != nil {
-		logger.Error("Unable to update instance status for DELETE",
+	if err := s.SubscriptionManager.CancelSubscription(ctx, inst.SubscriptionID); err != nil {
+		logger.Error("Unable to cancel Stripe Subscription",
 			zap.Error(err),
 		)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
