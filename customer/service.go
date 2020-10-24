@@ -14,8 +14,8 @@ import (
 
 var validate *validator.Validate = validator.New()
 
-// Options contains the configuration for Service router
-type Options struct {
+// ServiceOptions contains the configuration for Service router
+type ServiceOptions struct {
 	Auth            *auth.Auth
 	CustomerManager *Manager
 	Logger          *zap.Logger
@@ -23,7 +23,7 @@ type Options struct {
 
 // Service is the customer API router
 type Service struct {
-	Options
+	ServiceOptions
 }
 
 // LoginRequest is the model of user request for login pin
@@ -32,7 +32,7 @@ type LoginRequest struct {
 }
 
 // NewService will create an instance of the customer API router
-func NewService(option Options) (*Service, error) {
+func NewService(option ServiceOptions) (*Service, error) {
 	if option.Auth == nil {
 		return nil, fmt.Errorf("nil Auth is invalid")
 	}
@@ -43,7 +43,7 @@ func NewService(option Options) (*Service, error) {
 		return nil, fmt.Errorf("nil Logger is invalid")
 	}
 	return &Service{
-		Options: option,
+		ServiceOptions: option,
 	}, nil
 }
 
