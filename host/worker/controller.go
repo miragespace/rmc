@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/zllovesuki/rmc/host"
-	"github.com/zllovesuki/rmc/host/worker/docker"
+	"github.com/zllovesuki/rmc/host/docker"
 	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
@@ -19,7 +19,7 @@ type Options struct {
 	Docker   *docker.Client
 	Logger   *zap.Logger
 	Consumer broker.Consumer
-	Host     *host.Host
+	Host     host.Host
 	HostIP   string
 }
 
@@ -40,8 +40,11 @@ func NewController(option Options) (*Controller, error) {
 	if option.Consumer == nil {
 		return nil, fmt.Errorf("nil Consumer is invalid")
 	}
-	if option.Host == nil {
-		return nil, fmt.Errorf("nil Host is invalid")
+	if len(option.Host.Name) == 0 {
+		return nil, fmt.Errorf("empty Host Name is invalid")
+	}
+	if option.Host.Capacity == 0 {
+		return nil, fmt.Errorf("zero capacity is invalid")
 	}
 	if len(option.HostIP) == 0 {
 		return nil, fmt.Errorf("empty host ip is invalid")
@@ -52,12 +55,12 @@ func NewController(option Options) (*Controller, error) {
 }
 
 func (c *Controller) Run(ctx context.Context) error {
-	crChan, err := c.Consumer.ReceiveControlRequest(ctx, c.Host)
+	crChan, err := c.Consumer.ReceiveControlRequest(ctx, &c.Host)
 	if err != nil {
 		return err
 	}
 
-	prChan, err := c.Consumer.ReceiveProvisionRequest(ctx, c.Host)
+	prChan, err := c.Consumer.ReceiveProvisionRequest(ctx, &c.Host)
 	if err != nil {
 		return err
 	}
@@ -202,7 +205,7 @@ func (c *Controller) sendHeartbeat(ctx context.Context) {
 			ticker.Stop()
 			return
 		case <-ticker.C:
-			instances, err := c.Docker.ListInstances(ctx)
+			stats, err := c.Docker.StatsInstances(ctx)
 			if err != nil {
 				c.Logger.Error("Cannot get instance list",
 					zap.Error(err),
@@ -210,10 +213,10 @@ func (c *Controller) sendHeartbeat(ctx context.Context) {
 			}
 			c.Consumer.SendHeartbeat(&protocol.Heartbeat{
 				Host: &protocol.Host{
-					Name:     "test",
-					Running:  int64(len(instances)),
-					Stopped:  0,
-					Capacity: 20,
+					Name:     c.Host.Name,
+					Running:  stats.Running,
+					Stopped:  stats.Stopped,
+					Capacity: c.Host.Capacity,
 				},
 			})
 		}

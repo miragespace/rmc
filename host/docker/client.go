@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zllovesuki/rmc/instance"
 	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/protocol"
 
@@ -148,23 +147,31 @@ func (c *Client) StartInstance(ctx context.Context, p *protocol.Instance) error 
 	return nil
 }
 
-func (c *Client) ListInstances(ctx context.Context) ([]*instance.Instance, error) {
+type Stats struct {
+	Running int64
+	Stopped int64
+}
+
+func (c *Client) StatsInstances(ctx context.Context) (stats Stats, err error) {
 	containers, err := c.Client.ContainerList(ctx, types.ContainerListOptions{
 		All: true,
 	})
 	if err != nil {
-		return nil, extErrors.Wrap(err, "Cannot list instances")
+		return
 	}
 
-	instances := make([]*instance.Instance, 0)
 	for _, container := range containers {
 		for _, name := range container.Names {
 			if strings.HasPrefix(name, "/rmc-instance-") {
-				instances = append(instances, &instance.Instance{
-					ID: "h",
-				})
+				switch container.Status {
+				case "running", "removing", "restarting":
+					stats.Running++
+				default:
+					stats.Stopped++
+				}
 			}
 		}
 	}
-	return instances, nil
+
+	return
 }

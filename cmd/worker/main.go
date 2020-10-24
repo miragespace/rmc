@@ -12,8 +12,8 @@ import (
 	"github.com/zllovesuki/rmc/auth"
 	"github.com/zllovesuki/rmc/broker"
 	"github.com/zllovesuki/rmc/host"
+	"github.com/zllovesuki/rmc/host/docker"
 	"github.com/zllovesuki/rmc/host/worker"
-	"github.com/zllovesuki/rmc/host/worker/docker"
 
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
@@ -107,7 +107,7 @@ func main() {
 
 	// TODO: define it from env variables
 	// TODO: get server IP
-	currentHost := &host.Host{
+	currentHost := host.Host{
 		Name:     "test",
 		Capacity: 20,
 	}
