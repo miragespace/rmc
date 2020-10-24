@@ -9,6 +9,7 @@ import (
 	extErrors "github.com/pkg/errors"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Manager struct {
@@ -26,7 +27,11 @@ func NewManager(logger *zap.Logger, db *gorm.DB) (*Manager, error) {
 func (m *Manager) RecordUsage(ctx context.Context, sid string, event Event) error {
 	result := m.db.Transaction(func(tx *gorm.DB) error {
 		var usage Usage
-		lookupRes := tx.Order("start desc").Where("subscription_id = ?", sid).First(&usage)
+		lookupRes := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Order("start desc").
+			Where("subscription_id = ?", sid).
+			First(&usage)
 		if event == Start {
 			if usage.End == nil {
 				return fmt.Errorf("Cannot record usage for START if it has not END'd")

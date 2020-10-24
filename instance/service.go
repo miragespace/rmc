@@ -3,6 +3,7 @@ package instance
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/zllovesuki/rmc/auth"
@@ -98,7 +99,7 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.SubscriptionManager.CancelSubscription(inst.SubscriptionID); err != nil {
+	if err := s.SubscriptionManager.CancelSubscription(ctx, inst.SubscriptionID); err != nil {
 		logger.Error("Unable to cancel Stripe Subscription",
 			zap.Error(err),
 		)
@@ -141,7 +142,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	valid, err := s.SubscriptionManager.ValidSubscription(claims.ID, req.SubscriptionID)
+	valid, err := s.SubscriptionManager.ValidSubscription(ctx, claims.ID, req.SubscriptionID)
 	if err != nil {
 		logger.Error("Unable to verify subscription validity",
 			zap.Error(err),
@@ -188,6 +189,13 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if host == nil {
+		// TODO: make it more obvious to user and to operator
+		logger.Error("No available host for provisioning")
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	logger = logger.With(zap.String("HostName", host.Name))
 
 	inst := Instance{
@@ -210,6 +218,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.Producer.SendProvisionRequest(host, &protocol.ProvisionRequest{
 		Instance: &protocol.Instance{
+			InstanceID:    inst.ID,
 			Version:       req.ServerVersion,
 			IsJavaEdition: req.IsJavaEdition,
 		},
@@ -251,6 +260,13 @@ func (s *Service) Router() http.Handler {
 			return
 		}
 		fmt.Fprintf(w, "this is a test for jwt token. CustomerID: "+claims.ID)
+	})
+	r.Get("/host", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		host, _ := s.HostManager.NextAvailableHost(ctx)
+		log.Printf("%+v", host)
+		w.Header().Add("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(host)
 	})
 
 	return r
