@@ -23,7 +23,7 @@ type HostTask struct {
 
 func NewHostTask(option HostOptions) (*HostTask, error) {
 	if option.HostManager == nil {
-		return nil, fmt.Errorf("nil InstanceManager is invalid")
+		return nil, fmt.Errorf("nil HostManager is invalid")
 	}
 	if option.Producer == nil {
 		return nil, fmt.Errorf("nil Producer is invalid")

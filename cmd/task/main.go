@@ -2,15 +2,18 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/zllovesuki/rmc/auth"
 	"github.com/zllovesuki/rmc/broker"
+	"github.com/zllovesuki/rmc/db"
 	"github.com/zllovesuki/rmc/host"
-	"github.com/zllovesuki/rmc/spec/protocol"
+	"github.com/zllovesuki/rmc/instance"
+	"github.com/zllovesuki/rmc/task"
 
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
@@ -70,11 +73,19 @@ func main() {
 	cfg := zapsentry.Configuration{
 		Level: zapcore.ErrorLevel,
 		Tags: map[string]string{
-			"component": "host",
+			"component": "task",
 		},
 	}
 	core, err := zapsentry.NewCore(cfg, zapsentry.NewSentryClientFromClient(sentry.CurrentHub().Client()))
 	logger = zapsentry.AttachCoreToLogger(core, logger)
+
+	// Initialize backend connections
+	db, err := db.New(logger, os.Getenv("POSTGRES_URI"))
+	if err != nil {
+		logger.Fatal("Cannot connect to Postgres",
+			zap.Error(err),
+		)
+	}
 
 	amqpBroker, err := broker.NewAMQPBroker(os.Getenv("AMQP_URI"))
 	if err != nil {
@@ -84,47 +95,60 @@ func main() {
 	}
 	defer amqpBroker.Close()
 
-	ctx := context.Background()
-
-	msgChan, err := amqpBroker.ReceiveControlRequest(ctx, &host.Host{
-		Name: "test",
-	})
+	instanceManager, err := instance.NewManager(logger, db)
 	if err != nil {
-		log.Fatal("Cannot get message channel",
+		logger.Fatal("Cannot initialize InstanceManager",
 			zap.Error(err),
 		)
 	}
 
-	go func() {
-		tick := time.Tick(time.Second * 15)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-tick:
-				amqpBroker.SendHeartbeart(&protocol.Heartbeat{
-					Host: &protocol.Host{
-						Name: "test",
-					},
-				})
-			}
-		}
-	}()
-
-	for {
-		select {
-		case d := <-msgChan:
-			fmt.Println(d)
-			if err := amqpBroker.SendControlReply(&protocol.ControlReply{
-				Instance: &protocol.Instance{
-					InstanceID: "test-instance",
-				},
-				Result: protocol.ControlReply_SUCCESS,
-			}); err != nil {
-				logger.Error("Cannot send heartbeat",
-					zap.Error(err),
-				)
-			}
-		}
+	hostManager, err := host.NewManager(logger, db)
+	if err != nil {
+		logger.Fatal("Cannot initialize HostManager",
+			zap.Error(err),
+		)
 	}
+
+	instanceTask, err := task.NewInstanceTask(task.InstanceOptions{
+		InstanceManager: instanceManager,
+		Producer:        amqpBroker,
+		Logger:          logger,
+	})
+	if err != nil {
+		logger.Fatal("Cannot get instance task",
+			zap.Error(err),
+		)
+	}
+
+	hostTask, err := task.NewHostTask(task.HostOptions{
+		HostManager: hostManager,
+		Producer:    amqpBroker,
+		Logger:      logger,
+	})
+	if err != nil {
+		logger.Fatal("Cannot get host task",
+			zap.Error(err),
+		)
+	}
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	if err := instanceTask.HandleReply(ctx); err != nil {
+		logger.Fatal("Cannot handle instance replies",
+			zap.Error(err),
+		)
+	}
+	if err := hostTask.HandleReply(ctx); err != nil {
+		logger.Fatal("Cannot handle host replies",
+			zap.Error(err),
+		)
+	}
+	logger.Info("API task started")
+
+	<-c
+	cancel()
+
 }

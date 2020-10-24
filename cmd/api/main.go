@@ -7,16 +7,18 @@ import (
 	"net/http"
 	"net/smtp"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/zllovesuki/rmc/auth"
 	"github.com/zllovesuki/rmc/broker"
 	"github.com/zllovesuki/rmc/customer"
 	"github.com/zllovesuki/rmc/db"
+	"github.com/zllovesuki/rmc/external"
 	"github.com/zllovesuki/rmc/host"
 	"github.com/zllovesuki/rmc/instance"
 	"github.com/zllovesuki/rmc/subscription"
-	"github.com/zllovesuki/rmc/task"
 
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
@@ -25,7 +27,6 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/go-redis/redis/v7"
 	"github.com/joho/godotenv"
-	"github.com/stripe/stripe-go/v71"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -87,7 +88,8 @@ func main() {
 	core, err := zapsentry.NewCore(cfg, zapsentry.NewSentryClientFromClient(sentry.CurrentHub().Client()))
 	logger = zapsentry.AttachCoreToLogger(core, logger)
 
-	stripe.Key = os.Getenv("STRIPE_KEY")
+	// a Stripe client will allow us to mock testing
+	stripeClient := external.NewStripeClient(os.Getenv("STRIPE_KEY"))
 
 	// Initialize backend connections
 	db, err := db.New(logger, os.Getenv("POSTGRES_URI"))
@@ -149,7 +151,7 @@ func main() {
 	}
 
 	// Initialize Managers
-	customerManager, err := customer.NewManager(logger, db)
+	customerManager, err := customer.NewManager(logger, db, stripeClient)
 	if err != nil {
 		logger.Fatal("Cannot initialize CustomerManager",
 			zap.Error(err),
@@ -170,7 +172,7 @@ func main() {
 		)
 	}
 
-	subscriptionManager, err := subscription.NewManager(logger)
+	subscriptionManager, err := subscription.NewManager(logger, stripeClient)
 	if err != nil {
 		logger.Fatal("Cannot initialize SubscriptionManager",
 			zap.Error(err),
@@ -211,38 +213,6 @@ func main() {
 		)
 	}
 
-	instanceTask, err := task.NewInstanceTask(task.InstanceOptions{
-		InstanceManager: instanceManager,
-		Producer:        amqpBroker,
-		Logger:          logger,
-	})
-	if err != nil {
-		logger.Fatal("Cannot get instance task",
-			zap.Error(err),
-		)
-	}
-	if err := instanceTask.HandleReply(context.TODO()); err != nil {
-		logger.Fatal("Cannot handle instance replies",
-			zap.Error(err),
-		)
-	}
-
-	hostTask, err := task.NewHostTask(task.HostOptions{
-		HostManager: hostManager,
-		Producer:    amqpBroker,
-		Logger:      logger,
-	})
-	if err != nil {
-		logger.Fatal("Cannot get host task",
-			zap.Error(err),
-		)
-	}
-	if err := hostTask.HandleReply(context.TODO()); err != nil {
-		logger.Fatal("Cannot handle host replies",
-			zap.Error(err),
-		)
-	}
-
 	// Initialize http/middlewares
 	r := chi.NewRouter()
 
@@ -275,9 +245,25 @@ func main() {
 		Addr:    ":42069",
 	}
 
-	if err := srv.ListenAndServe(); err != nil {
-		logger.Fatal("Unable to listen for request",
-			zap.Error(srv.ListenAndServe()),
-		)
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal("Unable to listen for request",
+				zap.Error(srv.ListenAndServe()),
+			)
+		}
+	}()
+	logger.Info("API Started")
+
+	<-c
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer func() {
+		cancel()
+	}()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Fatal("Server Shutdown Failed", zap.Error(err))
 	}
 }

@@ -7,6 +7,7 @@ message Host {
     string Name = 1;
     int64 Running = 2;
     int64 Stopped = 3;
+    int64 Capacity = 4;
 }
 
 message Heartbeat {
