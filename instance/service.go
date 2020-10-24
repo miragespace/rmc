@@ -361,6 +361,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:      time.Now(),
 	}
 
+	// even if the user tries to race condition newInstance, uniqueIndex on SubscriptionID should prevent it
 	if err := s.InstanceManager.Create(ctx, &inst); err != nil {
 		logger.Error("Unable to create instance",
 			zap.Error(err),
