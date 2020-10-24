@@ -15,6 +15,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+/*
+	Criteria for an "available" host:
+	1. Last heartbeart was in the last (2 * HeartbeatInterval) seconds
+	2. Has (running + stopped) < capacity
+*/
 // good god there has to be a better way for this
 var interval = (spec.HeartbeatInterval * 2).String()
 var nextHostQuery string = "? - last_heartbeat < interval '" + interval[:len(interval)-1] + " seconds' AND running + stopped < capacity"
@@ -56,13 +61,7 @@ func (m *Manager) GetHostByName(ctx context.Context, name string) (*Host, error)
 
 // NextAvailableHost looks up an available host for provisioning. If it can't find one, it will be nil
 func (m *Manager) NextAvailableHost(ctx context.Context) (*Host, error) {
-	/*
-		Criteria for an "available" host:
-		1. Last heartbeart was in the last (2 * HeartbeatInterval) seconds
-		2. Has capacity > 0
-		3. Has (running + stopped) < capacity (implied by 2)
-	*/
-	hosts := make([]Host, 1)
+	hosts := make([]Host, 0, 1)
 	result := m.db.WithContext(ctx).
 		Order("random()").
 		Limit(1).
@@ -109,12 +108,13 @@ func (m *Manager) ProcessHeartbeat(ctx context.Context, p *protocol.Heartbeat) e
 				Stopped:       0,
 				Capacity:      host.GetCapacity(),
 				LastHeartbeat: now,
+				FirstSeen:     now,
 			}
 			createRes := tx.Create(&existingHost)
 			return createRes.Error
 		} else if lookupRes.Error == nil {
 			// existing host
-			existingHost.LastHeartbeat = time.Now()
+			existingHost.LastHeartbeat = now
 			existingHost.Running = host.GetRunning()
 			existingHost.Stopped = host.GetStopped()
 			existingHost.Capacity = host.GetCapacity()

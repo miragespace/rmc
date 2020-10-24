@@ -1,7 +1,10 @@
 package customer
 
+import "time"
+
 // Customer describes a user in RMC
 type Customer struct {
-	ID    string `json:"id" gorm:"primaryKey"`              // Corresponds to Stripe's customer ID
-	Email string `json:"email" gorm:"uniqueIndex;not null"` // User's email address
+	ID        string    `json:"id" gorm:"primaryKey"`              // Corresponds to Stripe's customer ID
+	Email     string    `json:"email" gorm:"uniqueIndex;not null"` // User's email address
+	CreatedAt time.Time `json:"createdAt"`
 }

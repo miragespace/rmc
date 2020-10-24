@@ -3,6 +3,7 @@ package customer
 import (
 	"context"
 	"errors"
+	"time"
 
 	extErrors "github.com/pkg/errors"
 	"github.com/stripe/stripe-go/v71"
@@ -72,8 +73,9 @@ func (m *Manager) New(ctx context.Context, email string) (*Customer, error) {
 	}
 
 	newCustomer := &Customer{
-		ID:    c.ID,
-		Email: email,
+		ID:        c.ID,
+		Email:     email,
+		CreatedAt: time.Now(),
 	}
 
 	result := m.db.WithContext(ctx).Create(newCustomer)

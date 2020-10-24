@@ -9,6 +9,7 @@ type Host struct {
 	Stopped       int64
 	Capacity      int64
 	LastHeartbeat time.Time
+	FirstSeen     time.Time
 	// TODO: Server location?
 }
 
