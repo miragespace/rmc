@@ -9,6 +9,7 @@ type Host struct {
 	Stopped       int64
 	Capacity      int64
 	LastHeartbeat time.Time
+	// TODO: Server location?
 }
 
 // Identifier will return a deterministic routing key for message broker

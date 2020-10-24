@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -13,9 +12,8 @@ import (
 	"github.com/zllovesuki/rmc/auth"
 	"github.com/zllovesuki/rmc/broker"
 	"github.com/zllovesuki/rmc/host"
+	"github.com/zllovesuki/rmc/host/worker"
 	"github.com/zllovesuki/rmc/host/worker/docker"
-	"github.com/zllovesuki/rmc/spec"
-	"github.com/zllovesuki/rmc/spec/protocol"
 
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
@@ -106,112 +104,30 @@ func main() {
 		)
 	}
 
-	// TESTING
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-
-	ctx, cancel := context.WithCancel(context.Background())
-
+	// TODO: define it from env variables
 	currentHost := &host.Host{
 		Name:     "test",
 		Capacity: 20,
 	}
 
-	crChan, err := amqpBroker.ReceiveControlRequest(ctx, currentHost)
+	controller, err := worker.NewController(worker.Options{
+		Docker:   docker,
+		Logger:   logger,
+		Consumer: amqpBroker,
+		Host:     currentHost,
+	})
 	if err != nil {
-		log.Fatal("Cannot get message channel",
+		logger.Fatal("Cannot initialize Controller",
 			zap.Error(err),
 		)
 	}
 
-	prChan, err := amqpBroker.ReceiveProvisionRequest(ctx, currentHost)
-	if err != nil {
-		log.Fatal("Cannot get message channel",
-			zap.Error(err),
-		)
-	}
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	go func() {
-		tick := time.Tick(spec.HeartbeatInterval)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-tick:
-				instances, err := docker.ListInstances(ctx)
-				if err != nil {
-					logger.Error("Cannot get instance list",
-						zap.Error(err),
-					)
-				}
-				logger.Info("ListInstances", zap.Int("len", len(instances)))
-				amqpBroker.SendHeartbeat(&protocol.Heartbeat{
-					Host: &protocol.Host{
-						Name:     "test",
-						Running:  int64(len(instances)),
-						Stopped:  0,
-						Capacity: 20,
-					},
-				})
-			}
-		}
-	}()
+	ctx, cancel := context.WithCancel(context.Background())
 
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case d := <-crChan:
-				fmt.Println(d)
-				if err := amqpBroker.SendControlReply(&protocol.ControlReply{
-					Instance: &protocol.Instance{
-						InstanceID: "test-instance",
-					},
-					Result: protocol.ControlReply_SUCCESS,
-				}); err != nil {
-					logger.Error("Cannot send control reply",
-						zap.Error(err),
-					)
-				}
-			}
-		}
-	}()
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case d := <-prChan:
-				fmt.Println(d)
-				if d.GetAction() != protocol.ProvisionRequest_CREATE {
-					continue
-				}
-				reply := &protocol.ProvisionReply{
-					Instance: &protocol.Instance{
-						InstanceID: d.GetInstance().GetInstanceID(),
-					},
-				}
-				if err := docker.ProvisionInstance(ctx, d.GetInstance()); err != nil {
-					logger.Error("Cannot provision instance",
-						zap.Error(err),
-					)
-					reply.Result = protocol.ProvisionReply_FAILURE
-				} else {
-					reply.Result = protocol.ProvisionReply_SUCCESS
-				}
-
-				if err := amqpBroker.SendProvisionReply(reply); err != nil {
-					logger.Error("Cannot send provision reply",
-						zap.Error(err),
-					)
-				}
-			}
-		}
-	}()
-
-	logger.Info("Heartbeat interval: " + spec.HeartbeatInterval.String())
+	controller.Run(ctx)
 
 	<-c
 	cancel()
