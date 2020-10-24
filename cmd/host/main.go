@@ -10,6 +10,7 @@ import (
 	"github.com/zllovesuki/rmc/auth"
 	"github.com/zllovesuki/rmc/broker"
 	"github.com/zllovesuki/rmc/host"
+	"github.com/zllovesuki/rmc/spec/protocol"
 
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
@@ -94,10 +95,36 @@ func main() {
 		)
 	}
 
+	go func() {
+		tick := time.Tick(time.Second * 15)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick:
+				amqpBroker.SendHeartbeart(&protocol.Heartbeat{
+					Host: &protocol.Host{
+						Name: "test",
+					},
+				})
+			}
+		}
+	}()
+
 	for {
 		select {
 		case d := <-msgChan:
 			fmt.Println(d)
+			if err := amqpBroker.SendControlReply(&protocol.ControlReply{
+				Instance: &protocol.Instance{
+					InstanceID: "test-instance",
+				},
+				Result: protocol.ControlReply_SUCCESS,
+			}); err != nil {
+				logger.Error("Cannot send heartbeat",
+					zap.Error(err),
+				)
+			}
 		}
 	}
 }

@@ -2,6 +2,9 @@ package host
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"time"
 
 	"github.com/zllovesuki/rmc/spec/protocol"
 
@@ -36,5 +39,32 @@ func (m *Manager) NextAvailableHost(ctx context.Context) (*Host, error) {
 }
 
 func (m *Manager) ProcessHeartbeat(ctx context.Context, p *protocol.Heartbeat) error {
-	panic("not implemented")
+	host := p.GetHost()
+	if host == nil {
+		return fmt.Errorf("Invalid heartbeat: nil Host")
+	}
+	name := host.GetName()
+	if len(name) == 0 {
+		return fmt.Errorf("Invalid heartbeat: empty host name")
+	}
+	now := time.Now()
+	return m.db.Transaction(func(tx *gorm.DB) error {
+		var existingHost Host
+		lookupRes := tx.First(&existingHost, "name = ?", name)
+		if errors.Is(lookupRes.Error, gorm.ErrRecordNotFound) {
+			// register new host (TODO: capacity)
+			existingHost = Host{
+				Name:          name,
+				LastHeartbeat: now,
+			}
+			createRes := tx.Create(&existingHost)
+			return createRes.Error
+		} else if lookupRes.Error == nil {
+			// existing host: update timestamp (TODO: currently running instances)
+			existingHost.LastHeartbeat = time.Now()
+			saveRes := tx.Save(&existingHost)
+			return saveRes.Error
+		}
+		return lookupRes.Error
+	})
 }

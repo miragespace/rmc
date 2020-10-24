@@ -21,4 +21,5 @@ require (
 	google.golang.org/protobuf v1.23.0
 	gorm.io/driver/postgres v1.0.2
 	gorm.io/gorm v1.20.2
+	moul.io/zapgorm2 v1.0.1
 )

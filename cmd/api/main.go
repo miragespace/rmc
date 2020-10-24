@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/zllovesuki/rmc/host"
 	"github.com/zllovesuki/rmc/instance"
 	"github.com/zllovesuki/rmc/subscription"
+	"github.com/zllovesuki/rmc/task"
 
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
@@ -88,7 +90,7 @@ func main() {
 	stripe.Key = os.Getenv("STRIPE_KEY")
 
 	// Initialize backend connections
-	db, err := db.New(os.Getenv("POSTGRES_URI"))
+	db, err := db.New(logger, os.Getenv("POSTGRES_URI"))
 	if err != nil {
 		logger.Fatal("Cannot connect to Postgres",
 			zap.Error(err),
@@ -205,6 +207,38 @@ func main() {
 	})
 	if err != nil {
 		logger.Fatal("Cannot initialize Subscription Service Router",
+			zap.Error(err),
+		)
+	}
+
+	instanceTask, err := task.NewInstanceTask(task.InstanceOptions{
+		InstanceManager: instanceManager,
+		Producer:        amqpBroker,
+		Logger:          logger,
+	})
+	if err != nil {
+		logger.Fatal("Cannot get instance task",
+			zap.Error(err),
+		)
+	}
+	if err := instanceTask.HandleReply(context.TODO()); err != nil {
+		logger.Fatal("Cannot handle instance replies",
+			zap.Error(err),
+		)
+	}
+
+	hostTask, err := task.NewHostTask(task.HostOptions{
+		HostManager: hostManager,
+		Producer:    amqpBroker,
+		Logger:      logger,
+	})
+	if err != nil {
+		logger.Fatal("Cannot get host task",
+			zap.Error(err),
+		)
+	}
+	if err := hostTask.HandleReply(context.TODO()); err != nil {
+		logger.Fatal("Cannot handle host replies",
 			zap.Error(err),
 		)
 	}

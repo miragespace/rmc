@@ -18,12 +18,15 @@ var _ broker.Consumer = &AMQPBroker{}
 const (
 	workerControlExchange   string = "worker_control"
 	workerProvisionExchange        = "worker_provision"
+	workerReplyRoutingKey          = "request_reply"
+	workerHeartbeatExchange        = "heartbeat"
 )
 
 // AMQPBroker describes a message broker via RabbitMQ
 type AMQPBroker struct {
-	connection *amqp.Connection
-	channel    *amqp.Channel
+	connection      *amqp.Connection
+	producerChannel *amqp.Channel
+	consumerChannel *amqp.Channel
 }
 
 // NewAMQPBroker returns a Message Broker over RabbitMQ
@@ -32,56 +35,53 @@ func NewAMQPBroker(amqpURI string) (*AMQPBroker, error) {
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot connect to Message Broker")
 	}
-	amqpChan, err := amqpConn.Channel()
+	pConn, err := amqpConn.Channel()
 	if err != nil {
-		return nil, extErrors.Wrap(err, "Cannot create broken channel")
+		return nil, extErrors.Wrap(err, "Cannot create producer channel")
+	}
+	cConn, err := amqpConn.Channel()
+	if err != nil {
+		return nil, extErrors.Wrap(err, "Cannot create consumer channel")
 	}
 	broker := &AMQPBroker{
-		connection: amqpConn,
-		channel:    amqpChan,
+		connection:      amqpConn,
+		producerChannel: pConn,
+		consumerChannel: cConn,
 	}
-	if err := broker.setupControlExchange(); err != nil {
+	if err := broker.setupExchange(workerControlExchange); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot declare exchange for control requests")
 	}
-	if err := broker.setupProvisionExchange(); err != nil {
+	if err := broker.setupExchange(workerProvisionExchange); err != nil {
+		return nil, extErrors.Wrap(err, "Cannot declare exchange for provision requests")
+	}
+	if err := broker.setupExchange(workerHeartbeatExchange); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot declare exchange for provision requests")
 	}
 
 	return broker, nil
 }
 
-func (a *AMQPBroker) setupControlExchange() error {
-	return a.channel.ExchangeDeclare(
-		workerControlExchange, // name
-		"direct",              // type
-		true,                  // durable
-		false,                 // auto-deleted
-		false,                 // internal
-		false,                 // no-wait
-		nil,                   // arguments
-	)
-}
-
-func (a *AMQPBroker) setupProvisionExchange() error {
-	return a.channel.ExchangeDeclare(
-		workerProvisionExchange, // name
-		"direct",                // type
-		true,                    // durable
-		false,                   // auto-deleted
-		false,                   // internal
-		false,                   // no-wait
-		nil,                     // arguments
+func (a *AMQPBroker) setupExchange(exchange string) error {
+	return a.producerChannel.ExchangeDeclare(
+		exchange, // name
+		"topic",  // type
+		true,     // durable
+		false,    // auto-deleted
+		false,    // internal
+		false,    // no-wait
+		nil,      // arguments
 	)
 }
 
 // Close will close the channel and connection to release resources
 func (a *AMQPBroker) Close() {
-	a.channel.Close()
+	a.producerChannel.Close()
+	a.consumerChannel.Close()
 	a.connection.Close()
 }
 
 func (a *AMQPBroker) publishViaRoutingKey(exchange, routingKey string, body []byte) error {
-	return a.channel.Publish(
+	return a.producerChannel.Publish(
 		exchange,
 		routingKey,
 		false,
@@ -117,8 +117,30 @@ func (a *AMQPBroker) SendProvisionRequest(host *host.Host, p *protocol.Provision
 	return nil
 }
 
+func (a *AMQPBroker) SendControlReply(p *protocol.ControlReply) error {
+	protoBytes, err := proto.Marshal(p)
+	if err != nil {
+		return extErrors.Wrap(err, "Cannot encode message into bytes")
+	}
+	if err := a.publishViaRoutingKey(workerControlExchange, workerReplyRoutingKey, protoBytes); err != nil {
+		return extErrors.Wrap(err, "Cannot publish control reply")
+	}
+	return nil
+}
+
+func (a *AMQPBroker) SendProvisionReply(p *protocol.ProvisionReply) error {
+	protoBytes, err := proto.Marshal(p)
+	if err != nil {
+		return extErrors.Wrap(err, "Cannot encode message into bytes")
+	}
+	if err := a.publishViaRoutingKey(workerProvisionExchange, workerReplyRoutingKey, protoBytes); err != nil {
+		return extErrors.Wrap(err, "Cannot publish provision reply")
+	}
+	return nil
+}
+
 func (a *AMQPBroker) setupQueue(qName string) error {
-	_, err := a.channel.QueueDeclare(
+	_, err := a.consumerChannel.QueueDeclare(
 		qName,
 		true,
 		false,
@@ -129,17 +151,17 @@ func (a *AMQPBroker) setupQueue(qName string) error {
 	return err
 }
 
-func (a *AMQPBroker) bindAndGetMsgChan(qName, exchange string, host *host.Host) (<-chan amqp.Delivery, error) {
-	if err := a.channel.QueueBind(
+func (a *AMQPBroker) bindAndGetMsgChan(qName, exchange, routingKey string) (<-chan amqp.Delivery, error) {
+	if err := a.consumerChannel.QueueBind(
 		qName,
-		host.Identifier(),
+		routingKey,
 		exchange,
 		false,
 		nil,
 	); err != nil {
 		return nil, err
 	}
-	msgChan, err := a.channel.Consume(
+	msgChan, err := a.consumerChannel.Consume(
 		qName,
 		"",
 		false,
@@ -156,7 +178,7 @@ func (a *AMQPBroker) ReceiveControlRequest(ctx context.Context, host *host.Host)
 	if err := a.setupQueue(name); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot setup queue")
 	}
-	msgChan, err := a.bindAndGetMsgChan(name, workerControlExchange, host)
+	msgChan, err := a.bindAndGetMsgChan(name, workerControlExchange, host.Identifier())
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot setup consumer")
 	}
@@ -185,7 +207,7 @@ func (a *AMQPBroker) ReceiveProvisionRequest(ctx context.Context, host *host.Hos
 	if err := a.setupQueue(name); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot setup queue")
 	}
-	msgChan, err := a.bindAndGetMsgChan(name, workerProvisionExchange, host)
+	msgChan, err := a.bindAndGetMsgChan(name, workerProvisionExchange, host.Identifier())
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot setup consumer")
 	}
@@ -209,6 +231,100 @@ func (a *AMQPBroker) ReceiveProvisionRequest(ctx context.Context, host *host.Hos
 	return rChan, nil
 }
 
-func (a *AMQPBroker) Heartbeart(host *host.Host, b *protocol.Heartbeat) error {
+func (a *AMQPBroker) ReceiveControlReply(ctx context.Context) (<-chan *protocol.ControlReply, error) {
+	name := "process_control_" + workerReplyRoutingKey
+	if err := a.setupQueue(name); err != nil {
+		return nil, extErrors.Wrap(err, "Cannot setup queue")
+	}
+	msgChan, err := a.bindAndGetMsgChan(name, workerControlExchange, workerReplyRoutingKey)
+	if err != nil {
+		return nil, extErrors.Wrap(err, "Cannot setup consumer")
+	}
+	rChan := make(chan *protocol.ControlReply)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case d := <-msgChan:
+				var req protocol.ControlReply
+				if err := proto.Unmarshal(d.Body, &req); err != nil {
+					d.Nack(false, false)
+					continue
+				}
+				rChan <- &req
+				d.Ack(false)
+			}
+		}
+	}()
+	return rChan, nil
+}
+
+func (a *AMQPBroker) ReceiveProvisionReply(ctx context.Context) (<-chan *protocol.ProvisionReply, error) {
+	name := "process_provision_" + workerReplyRoutingKey
+	if err := a.setupQueue(name); err != nil {
+		return nil, extErrors.Wrap(err, "Cannot setup queue")
+	}
+	msgChan, err := a.bindAndGetMsgChan(name, workerProvisionExchange, workerReplyRoutingKey)
+	if err != nil {
+		return nil, extErrors.Wrap(err, "Cannot setup consumer")
+	}
+	rChan := make(chan *protocol.ProvisionReply)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case d := <-msgChan:
+				var req protocol.ProvisionReply
+				if err := proto.Unmarshal(d.Body, &req); err != nil {
+					d.Nack(false, false)
+					continue
+				}
+				rChan <- &req
+				d.Ack(false)
+			}
+		}
+	}()
+	return rChan, nil
+}
+
+func (a *AMQPBroker) SendHeartbeart(b *protocol.Heartbeat) error {
+	protoBytes, err := proto.Marshal(b)
+	if err != nil {
+		return extErrors.Wrap(err, "Cannot encode message into bytes")
+	}
+	if err := a.publishViaRoutingKey(workerHeartbeatExchange, "heartbeat", protoBytes); err != nil {
+		return extErrors.Wrap(err, "Cannot publish heartbeats")
+	}
 	return nil
+}
+
+func (a *AMQPBroker) ReceiveHeartbeat(ctx context.Context) (<-chan *protocol.Heartbeat, error) {
+	name := "process_" + workerHeartbeatExchange
+	if err := a.setupQueue(name); err != nil {
+		return nil, extErrors.Wrap(err, "Cannot setup queue")
+	}
+	msgChan, err := a.bindAndGetMsgChan(name, workerHeartbeatExchange, "#")
+	if err != nil {
+		return nil, extErrors.Wrap(err, "Cannot setup consumer")
+	}
+	hChan := make(chan *protocol.Heartbeat)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case d := <-msgChan:
+				var req protocol.Heartbeat
+				if err := proto.Unmarshal(d.Body, &req); err != nil {
+					d.Nack(false, false)
+					continue
+				}
+				hChan <- &req
+				d.Ack(false)
+			}
+		}
+	}()
+	return hChan, nil
 }
