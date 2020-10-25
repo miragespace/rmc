@@ -58,7 +58,7 @@ func (a *AMQPBroker) Consumer() (broker.Consumer, error) {
 	var err error
 	a.consumerChannel, err = a.connection.Channel()
 	if err != nil {
-		return nil, extErrors.Wrap(err, "Cannot create producer channel")
+		return nil, extErrors.Wrap(err, "Cannot create consumer channel")
 	}
 	if err := a.setupExchanges(); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot declare as Consumer")
