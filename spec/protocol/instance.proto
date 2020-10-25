@@ -21,7 +21,6 @@ message ControlRequest {
         START = 1;
         STOP = 2;
     }
-
     Instance Instance = 1;
 
     ControlAction Action = 10;
@@ -35,6 +34,7 @@ message ControlReply {
         FAILURE = 2;
     }
     Instance Instance = 1;
+    ControlRequest.ControlAction RequestAction = 2;
 
     ControlResult Result = 10;
 }
@@ -59,6 +59,7 @@ message ProvisionReply {
         FAILURE = 2;
     }
     Instance Instance = 1;
+    ProvisionRequest.ProvisionAction RequestAction = 2;
 
     ProvisionResult Result = 10;
 }

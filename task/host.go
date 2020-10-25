@@ -12,17 +12,17 @@ import (
 	"go.uber.org/zap"
 )
 
-type HostOptions struct {
+type HostTaskOptions struct {
 	HostManager *host.Manager
 	Producer    broker.Producer
 	Logger      *zap.Logger
 }
 
 type HostTask struct {
-	HostOptions
+	HostTaskOptions
 }
 
-func NewHostTask(option HostOptions) (*HostTask, error) {
+func NewHostTask(option HostTaskOptions) (*HostTask, error) {
 	if option.HostManager == nil {
 		return nil, fmt.Errorf("nil HostManager is invalid")
 	}
@@ -33,7 +33,7 @@ func NewHostTask(option HostOptions) (*HostTask, error) {
 		return nil, fmt.Errorf("nil Logger is invalid")
 	}
 	return &HostTask{
-		HostOptions: option,
+		HostTaskOptions: option,
 	}, nil
 }
 

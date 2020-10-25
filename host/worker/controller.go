@@ -90,16 +90,21 @@ func (c *Controller) processControlRequest(ctx context.Context) {
 				continue
 			}
 
+			requestedInstance := d.GetInstance()
+			requestedAction := d.GetAction()
+			instanceID := requestedInstance.GetInstanceID()
+
 			logger := c.Logger.With(
-				zap.String("InstanceID", d.GetInstance().GetInstanceID()),
-				zap.String("Action", d.GetAction().String()),
+				zap.String("InstanceID", instanceID),
+				zap.String("Action", requestedAction.String()),
 			)
+
 			var err error
 			switch d.GetAction() {
 			case protocol.ControlRequest_STOP:
-				err = c.Docker.StopInstance(ctx, d.GetInstance())
+				err = c.Docker.StopInstance(ctx, requestedInstance)
 			case protocol.ControlRequest_START:
-				err = c.Docker.StartInstance(ctx, d.GetInstance())
+				err = c.Docker.StartInstance(ctx, requestedInstance)
 			default:
 				logger.Error("Received unknown request")
 				continue
@@ -116,8 +121,9 @@ func (c *Controller) processControlRequest(ctx context.Context) {
 			}
 
 			if err := c.Consumer.SendControlReply(&protocol.ControlReply{
-				Instance: d.GetInstance(),
-				Result:   result,
+				Instance:      requestedInstance,
+				RequestAction: requestedAction,
+				Result:        result,
 			}); err != nil {
 				c.Logger.Error("Cannot send control reply",
 					zap.Error(err),
@@ -142,16 +148,20 @@ func (c *Controller) processProvisionRequest(ctx context.Context) {
 				continue
 			}
 
+			requestedInstance := d.GetInstance()
+			requestedAction := d.GetAction()
+			instanceID := requestedInstance.GetInstanceID()
+
 			logger := c.Logger.With(
-				zap.String("InstanceID", d.GetInstance().GetInstanceID()),
-				zap.String("Action", d.GetAction().String()),
+				zap.String("InstanceID", instanceID),
+				zap.String("Action", requestedAction.String()),
 			)
 			var err error
 			var freePort int
-			switch d.GetAction() {
+			switch requestedAction {
 			case protocol.ProvisionRequest_DELETE:
 				// TODO: timeout or force delete
-				err = c.Docker.DeleteInstance(ctx, d.GetInstance())
+				err = c.Docker.DeleteInstance(ctx, requestedInstance)
 			case protocol.ProvisionRequest_CREATE:
 				freePort, err = util.GetFreePort()
 				if err != nil {
@@ -161,17 +171,15 @@ func (c *Controller) processProvisionRequest(ctx context.Context) {
 					break
 				}
 				d.Instance.Port = uint32(freePort)
-				err = c.Docker.ProvisionInstance(ctx, d.GetInstance())
+				err = c.Docker.ProvisionInstance(ctx, requestedInstance)
 			default:
 				logger.Error("Received unknown request")
 				continue
 			}
 
-			// TODO: questionable control flow, revisit this
 			reply := &protocol.ProvisionReply{
-				Instance: &protocol.Instance{
-					InstanceID: d.GetInstance().GetInstanceID(),
-				},
+				Instance:      requestedInstance,
+				RequestAction: requestedAction,
 			}
 			var result protocol.ProvisionReply_ProvisionResult
 			if err != nil {

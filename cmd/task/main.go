@@ -113,7 +113,7 @@ func main() {
 		)
 	}
 
-	instanceTask, err := task.NewInstanceTask(task.InstanceOptions{
+	instanceTask, err := task.NewInstanceTask(task.InstanceTaskOptions{
 		InstanceManager: instanceManager,
 		Producer:        amqpBroker,
 		Logger:          logger,
@@ -124,7 +124,7 @@ func main() {
 		)
 	}
 
-	hostTask, err := task.NewHostTask(task.HostOptions{
+	hostTask, err := task.NewHostTask(task.HostTaskOptions{
 		HostManager: hostManager,
 		Producer:    amqpBroker,
 		Logger:      logger,
