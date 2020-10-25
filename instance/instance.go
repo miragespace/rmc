@@ -12,7 +12,8 @@ type Instance struct {
 	ServerPort     uint32    `json:"serverPort"`                                 // Minecraft server port
 	ServerVersion  string    `json:"serverVersion"`                              // Minecraft server version
 	IsJavaEdition  bool      `json:"isJavaEdition"`                              // Minecraft server edition (Java/Bedrock)
-	State          string    `json:"state"`                                      // Starting/Stopping/Started/Stopped/Unknown/Provisioning/Error
+	PreviousState  string    `json:"previousState"`                              // See const.go for the list of valid states. This allows for easy error tracking when State is Error
+	State          string    `json:"state"`                                      // See const.go for the list of valid states
 	Status         string    `json:"status"`                                     // Active/Terminated
 	CreatedAt      time.Time `json:"createdAt"`
 }

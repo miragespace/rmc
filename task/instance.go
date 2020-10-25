@@ -55,24 +55,29 @@ func (t *InstanceTask) handleControlReply(ctx context.Context, cChan <-chan *pro
 			logger := t.Logger.With(
 				zap.String("InstanceID", instanceID),
 			)
-			lambda := func(currentState *instance.Instance, desiredState *instance.Instance) (shouldSave bool) {
-				if currentState == nil {
+			lambda := func(current *instance.Instance, desired *instance.Instance) (shouldSave bool) {
+				if current == nil {
 					logger.Error("nil Instance when processing provision reply")
 					return
 				}
+				desired.PreviousState = current.State
 				switch cReply.GetResult() {
 				case protocol.ControlReply_SUCCESS:
-					if currentState.State == instance.StateStopping {
-						desiredState.State = instance.StateStopped
-					} else {
-						desiredState.State = instance.StateRunning
+					switch current.State {
+					case instance.StateStopping:
+						desired.State = instance.StateStopped
+					case instance.StateStarting:
+						desired.State = instance.StateRunning
+					default:
+						logger.Error("Instance was in undefined state", zap.String("State", current.State))
+						desired.State = instance.StateUnknown
 					}
 				case protocol.ControlReply_FAILURE:
 					logger.Error("Instance control replied failure")
-					desiredState.State = instance.StateError
+					desired.State = instance.StateError
 				default:
 					logger.Error("Instance control replied undetermined result")
-					desiredState.State = instance.StateUnknown
+					desired.State = instance.StateUnknown
 				}
 				shouldSave = true
 				return
@@ -104,27 +109,31 @@ func (t *InstanceTask) handleProvisionReply(ctx context.Context, pChan <-chan *p
 			logger := t.Logger.With(
 				zap.String("InstanceID", instanceID),
 			)
-			lambda := func(currentState *instance.Instance, desiredState *instance.Instance) (shouldSave bool) {
-				if currentState == nil {
+			lambda := func(current *instance.Instance, desired *instance.Instance) (shouldSave bool) {
+				if current == nil {
 					logger.Error("nil Instance when processing provision reply")
 					return
 				}
+				desired.PreviousState = current.State
 				switch pReply.GetResult() {
 				case protocol.ProvisionReply_SUCCESS:
-					if currentState.State == instance.StateProvisioning {
-						desiredState.ServerAddr = pReply.GetInstance().GetAddr()
-						desiredState.ServerPort = pReply.GetInstance().GetPort()
-						desiredState.State = instance.StateRunning
-					} else {
-						desiredState.State = instance.StateStopped
-						desiredState.Status = instance.StatusTerminated
+					switch current.State {
+					case instance.StateProvisioning:
+						desired.ServerAddr = pReply.GetInstance().GetAddr()
+						desired.ServerPort = pReply.GetInstance().GetPort()
+						desired.State = instance.StateRunning
+					case instance.StateRemoving:
+						desired.State = instance.StateRemoved
+					default:
+						logger.Error("Instance was in undefined state", zap.String("State", current.State))
+						desired.State = instance.StateUnknown
 					}
 				case protocol.ProvisionReply_FAILURE:
 					logger.Error("Provision replied failure")
-					desiredState.State = instance.StateError
+					desired.State = instance.StateError
 				default:
 					logger.Error("Provision replied undetermined result")
-					desiredState.State = instance.StateUnknown
+					desired.State = instance.StateUnknown
 				}
 				shouldSave = true
 				return

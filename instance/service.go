@@ -123,27 +123,27 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lambda := func(currenState *Instance, desiredState *Instance) (shouldSave bool) {
-		if currenState == nil || currenState.CustomerID != claims.ID || currenState.Status != StatusActive {
+	lambda := func(current *Instance, desired *Instance) (shouldSave bool) {
+		if current == nil || current.CustomerID != claims.ID || current.Status != StatusActive {
 			resp.WriteError(w, r, resp.ErrNotFound().AddMessages("Cannot find instance with specific ID"))
 			return
 		}
 		logger = logger.With(
-			zap.String("HostName", currenState.HostName),
+			zap.String("HostName", current.HostName),
 		)
 
 		var action protocol.ControlRequest_ControlAction
 		var nextState string
 		switch req.Action {
 		case "Start":
-			if currenState.State != StateStopped {
+			if current.State != StateStopped {
 				resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Instance not in 'Stopped' state"))
 				return
 			}
 			action = protocol.ControlRequest_START
 			nextState = StateStarting
 		case "Stop":
-			if currenState.State != StateRunning {
+			if current.State != StateRunning {
 				resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Instance not in 'Running' state"))
 				return
 			}
@@ -155,10 +155,10 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := s.Producer.SendControlRequest(&host.Host{
-			Name: currenState.HostName,
+			Name: current.HostName,
 		}, &protocol.ControlRequest{
 			Instance: &protocol.Instance{
-				InstanceID: currenState.ID,
+				InstanceID: current.ID,
 			},
 			Action: action,
 		}); err != nil {
@@ -169,7 +169,8 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		desiredState.State = nextState
+		desired.PreviousState = current.State
+		desired.State = nextState
 		shouldSave = true
 		return
 	}
@@ -202,21 +203,21 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		zap.String("InstanceID", instanceID),
 	)
 
-	lambda := func(currentState *Instance, desireState *Instance) (shouldSave bool) {
-		if currentState == nil || currentState.CustomerID != claims.ID || currentState.Status != StatusActive {
+	lambda := func(current *Instance, desired *Instance) (shouldSave bool) {
+		if current == nil || current.CustomerID != claims.ID || current.Status != StatusActive {
 			resp.WriteError(w, r, resp.ErrNotFound().AddMessages("Cannot find instance with specific ID"))
 			return
 		}
 
-		if currentState.State != StateStopped {
+		if current.State != StateStopped {
 			resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Instance not in 'Stopped' state"))
 			return
 		}
 		logger = logger.With(
-			zap.String("HostName", currentState.HostName),
+			zap.String("HostName", current.HostName),
 		)
 
-		host, err := s.HostManager.GetHostByName(ctx, currentState.HostName)
+		host, err := s.HostManager.GetHostByName(ctx, current.HostName)
 		if err != nil {
 			logger.Error("Unable to get instance Host",
 				zap.Error(err),
@@ -227,7 +228,7 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 
 		if err := s.Producer.SendProvisionRequest(host, &protocol.ProvisionRequest{
 			Instance: &protocol.Instance{
-				InstanceID: currentState.ID,
+				InstanceID: current.ID,
 			},
 			Action: protocol.ProvisionRequest_DELETE,
 		}); err != nil {
@@ -238,7 +239,9 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		desireState.Status = StatusTerminated
+		desired.PreviousState = current.State
+		desired.State = StateRemoving
+		desired.Status = StatusTerminated
 		shouldSave = true
 		return
 	}
@@ -355,6 +358,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		HostName:       host.Name,
 		ServerVersion:  req.ServerVersion,
 		IsJavaEdition:  req.IsJavaEdition,
+		PreviousState:  StateUnknown,
 		State:          StateProvisioning,
 		Status:         StatusActive,
 		CreatedAt:      time.Now(),
