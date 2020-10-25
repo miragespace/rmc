@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	managedInstancePrefix = "/rmc-instance-"
+	managedInstancePrefix = "rmc-instance-"
 )
 
 type Options struct {
