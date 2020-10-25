@@ -81,7 +81,10 @@ func main() {
 	}
 
 	// Initialize backend connections
-	db, err := db.New(logger, os.Getenv("POSTGRES_URI"))
+	db, err := db.New(db.Options{
+		URI:    os.Getenv("POSTGRES_URI"),
+		Logger: logger,
+	})
 	if err != nil {
 		logger.Fatal("Cannot connect to Postgres",
 			zap.Error(err),

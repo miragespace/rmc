@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -24,15 +26,27 @@ func (l *patchedLogger) Trace(ctx context.Context, begin time.Time, fc func() (s
 	l.Logger.Trace(ctx, begin, fc, err)
 }
 
+// Options defines the configuration for DB handler
+type Options struct {
+	URI    string
+	Logger *zap.Logger
+}
+
 // New returns an instance for interacting with the PostgreSQL database
-func New(logger *zap.Logger, uri string) (*gorm.DB, error) {
+func New(option Options) (*gorm.DB, error) {
+	if option.Logger == nil {
+		return nil, fmt.Errorf("nil Logger is invalid")
+	}
+	if !strings.HasPrefix(option.URI, "postgres://") {
+		return nil, fmt.Errorf("uri is not a valid postgres uri")
+	}
 	gLogger := zapgorm2.Logger{
-		ZapLogger:        logger,
+		ZapLogger:        option.Logger,
 		LogLevel:         gormlogger.Warn,
 		SlowThreshold:    time.Second,
 		SkipCallerLookup: false,
 	}
-	db, err := gorm.Open(postgres.Open(uri), &gorm.Config{
+	db, err := gorm.Open(postgres.Open(option.URI), &gorm.Config{
 		Logger: &patchedLogger{
 			Logger: gLogger,
 		},
