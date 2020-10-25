@@ -143,32 +143,32 @@ func (a *AMQPBroker) SendProvisionReply(p *protocol.ProvisionReply) error {
 
 func (a *AMQPBroker) getMsgChannel(qName, exchange, routingKey string) (<-chan amqp.Delivery, error) {
 	if _, err := a.consumerChannel.QueueDeclare(
-		qName,
-		true,
-		false,
-		false,
-		false,
-		nil,
+		qName, // name
+		true,  // durable
+		false, // auto delete
+		false, // exclusive
+		false, // no wait
+		nil,   // args
 	); err != nil {
 		return nil, err
 	}
 	if err := a.consumerChannel.QueueBind(
-		qName,
-		routingKey,
-		exchange,
-		false,
-		nil,
+		qName,      // name
+		routingKey, // routing key
+		exchange,   // exchange
+		false,      // no wait
+		nil,        // args
 	); err != nil {
 		return nil, err
 	}
 	msgChan, err := a.consumerChannel.Consume(
-		qName,
-		"",
-		false,
-		false,
-		false,
-		false,
-		nil,
+		qName, // queue
+		"",    // consumer tag
+		false, // auto ack
+		false, // exclusive
+		false, // no local
+		false, // no wait
+		nil,   // args
 	)
 	return msgChan, err
 }
