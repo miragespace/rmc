@@ -18,6 +18,7 @@ import (
 type Options struct {
 	Docker   *docker.Client
 	Logger   *zap.Logger
+	Producer broker.Producer
 	Consumer broker.Consumer
 	Host     host.Host
 	HostIP   string
@@ -37,6 +38,9 @@ func NewController(option Options) (*Controller, error) {
 	if option.Logger == nil {
 		return nil, fmt.Errorf("nil Logger is invalid")
 	}
+	if option.Producer == nil {
+		return nil, fmt.Errorf("nil Producer is invalid")
+	}
 	if option.Consumer == nil {
 		return nil, fmt.Errorf("nil Consumer is invalid")
 	}
@@ -55,12 +59,12 @@ func NewController(option Options) (*Controller, error) {
 }
 
 func (c *Controller) Run(ctx context.Context) error {
-	crChan, err := c.Consumer.ReceiveControlRequest(ctx, &c.Host)
+	crChan, err := c.Consumer.ReceiveControlRequest(ctx, c.Host.Identifier())
 	if err != nil {
 		return err
 	}
 
-	prChan, err := c.Consumer.ReceiveProvisionRequest(ctx, &c.Host)
+	prChan, err := c.Consumer.ReceiveProvisionRequest(ctx, c.Host.Identifier())
 	if err != nil {
 		return err
 	}
@@ -120,7 +124,7 @@ func (c *Controller) processControlRequest(ctx context.Context) {
 				result = protocol.ControlReply_SUCCESS
 			}
 
-			if err := c.Consumer.SendControlReply(&protocol.ControlReply{
+			if err := c.Producer.SendControlReply(&protocol.ControlReply{
 				Instance:      requestedInstance,
 				RequestAction: requestedAction,
 				Result:        result,
@@ -195,7 +199,7 @@ func (c *Controller) processProvisionRequest(ctx context.Context) {
 
 			reply.Result = result
 
-			if err := c.Consumer.SendProvisionReply(reply); err != nil {
+			if err := c.Producer.SendProvisionReply(reply); err != nil {
 				c.Logger.Error("Cannot send provision reply",
 					zap.Error(err),
 				)
@@ -219,7 +223,7 @@ func (c *Controller) sendHeartbeat(ctx context.Context) {
 					zap.Error(err),
 				)
 			}
-			c.Consumer.SendHeartbeat(&protocol.Heartbeat{
+			c.Producer.SendHeartbeat(&protocol.Heartbeat{
 				Host: &protocol.Host{
 					Name:     c.Host.Name,
 					Running:  stats.Running,

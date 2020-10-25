@@ -87,6 +87,18 @@ func main() {
 		)
 	}
 	defer amqpBroker.Close()
+	producer, err := amqpBroker.Producer()
+	if err != nil {
+		logger.Fatal("Cannot setup broker as producer",
+			zap.Error(err),
+		)
+	}
+	consumer, err := amqpBroker.Consumer()
+	if err != nil {
+		logger.Fatal("Cannot setup broker as consumer",
+			zap.Error(err),
+		)
+	}
 
 	dockerCli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
@@ -115,7 +127,8 @@ func main() {
 	controller, err := worker.NewController(worker.Options{
 		Docker:   docker,
 		Logger:   logger,
-		Consumer: amqpBroker,
+		Producer: producer,
+		Consumer: consumer,
 		Host:     currentHost,
 		HostIP:   "127.0.0.1",
 	})

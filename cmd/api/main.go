@@ -20,6 +20,7 @@ import (
 	"github.com/zllovesuki/rmc/instance"
 	"github.com/zllovesuki/rmc/response"
 	"github.com/zllovesuki/rmc/subscription"
+	"github.com/zllovesuki/rmc/usage"
 
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
@@ -129,6 +130,12 @@ func main() {
 		)
 	}
 	defer amqpBroker.Close()
+	producer, err := amqpBroker.Producer()
+	if err != nil {
+		logger.Fatal("Cannot setup broker as producer",
+			zap.Error(err),
+		)
+	}
 
 	// Initialize authentication manager
 	smtpAuth := smtp.PlainAuth("", os.Getenv("SMTP_USERNAME"), os.Getenv("SMTP_PASSWORD"), os.Getenv("SMTP_HOST"))
@@ -188,6 +195,15 @@ func main() {
 		)
 	}
 
+	usageManager, err := usage.NewManager(logger, db)
+	if err != nil {
+		logger.Fatal("Cannot initialize UsageManager",
+			zap.Error(err),
+		)
+	}
+	// TODO: need another background task for usage calculation
+	var _ = usageManager
+
 	// Initialize servce routers
 	customerRouter, err := customer.NewService(customer.ServiceOptions{
 		Auth:            auth,
@@ -204,7 +220,7 @@ func main() {
 		SubscriptionManager: subscriptionManager,
 		HostManager:         hostManager,
 		InstanceManager:     instanceManager,
-		Producer:            amqpBroker,
+		Producer:            producer,
 		Logger:              logger,
 	})
 	if err != nil {

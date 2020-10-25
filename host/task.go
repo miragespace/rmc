@@ -1,10 +1,9 @@
-package task
+package host
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/zllovesuki/rmc/host"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
 
@@ -12,32 +11,32 @@ import (
 	"go.uber.org/zap"
 )
 
-type HostTaskOptions struct {
-	HostManager *host.Manager
-	Producer    broker.Producer
+type TaskOptions struct {
+	HostManager *Manager
+	Consumer    broker.Consumer
 	Logger      *zap.Logger
 }
 
-type HostTask struct {
-	HostTaskOptions
+type Task struct {
+	TaskOptions
 }
 
-func NewHostTask(option HostTaskOptions) (*HostTask, error) {
+func NewTask(option TaskOptions) (*Task, error) {
 	if option.HostManager == nil {
 		return nil, fmt.Errorf("nil HostManager is invalid")
 	}
-	if option.Producer == nil {
-		return nil, fmt.Errorf("nil Producer is invalid")
+	if option.Consumer == nil {
+		return nil, fmt.Errorf("nil Consumer is invalid")
 	}
 	if option.Logger == nil {
 		return nil, fmt.Errorf("nil Logger is invalid")
 	}
-	return &HostTask{
-		HostTaskOptions: option,
+	return &Task{
+		TaskOptions: option,
 	}, nil
 }
 
-func (t *HostTask) handleHeartbeat(ctx context.Context, hChan <-chan *protocol.Heartbeat) {
+func (t *Task) handleHeartbeat(ctx context.Context, hChan <-chan *protocol.Heartbeat) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -52,8 +51,8 @@ func (t *HostTask) handleHeartbeat(ctx context.Context, hChan <-chan *protocol.H
 	}
 }
 
-func (t *HostTask) HandleReply(ctx context.Context) error {
-	hChan, err := t.Producer.ReceiveHeartbeat(ctx)
+func (t *Task) HandleReply(ctx context.Context) error {
+	hChan, err := t.Consumer.ReceiveHeartbeat(ctx)
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot get heartbeat channel")
 	}

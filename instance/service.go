@@ -154,14 +154,22 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := s.Producer.SendControlRequest(&host.Host{
-			Name: current.HostName,
-		}, &protocol.ControlRequest{
-			Instance: &protocol.Instance{
-				InstanceID: current.ID,
-			},
-			Action: action,
-		}); err != nil {
+		host, err := s.HostManager.GetHostByName(ctx, current.HostName)
+		if err != nil {
+			logger.Error("Unable to get instance Host",
+				zap.Error(err),
+			)
+			resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to update Instance status"))
+			return
+		}
+
+		if err := s.Producer.SendControlRequest(host.Identifier(),
+			&protocol.ControlRequest{
+				Instance: &protocol.Instance{
+					InstanceID: current.ID,
+				},
+				Action: action,
+			}); err != nil {
 			logger.Error("Unable to send control request",
 				zap.Error(err),
 			)
@@ -189,6 +197,8 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 		// response was already sent in lambda
 		return
 	}
+
+	// background task should handle the usage update
 
 	w.WriteHeader(http.StatusAccepted)
 }
@@ -226,7 +236,7 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := s.Producer.SendProvisionRequest(host, &protocol.ProvisionRequest{
+		if err := s.Producer.SendProvisionRequest(host.Identifier(), &protocol.ProvisionRequest{
 			Instance: &protocol.Instance{
 				InstanceID: current.ID,
 			},
@@ -246,7 +256,7 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inst, err := s.InstanceManager.LambdaUpdate(ctx, instanceID, lambda)
+	_, err := s.InstanceManager.LambdaUpdate(ctx, instanceID, lambda)
 	if err != nil {
 		logger.Error("Unable to delete instance",
 			zap.Error(err),
@@ -255,19 +265,7 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if inst == nil {
-		// response was already sent in lambda
-		return
-	}
-
-	if err := s.SubscriptionManager.CancelSubscription(ctx, inst.SubscriptionID); err != nil {
-		logger.With(zap.String("SubscriptionID", inst.SubscriptionID)).
-			Error("Unable to cancel Stripe Subscription",
-				zap.Error(err),
-			)
-		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to delete Instance"))
-		return
-	}
+	// background task should handle cancelling subscription
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -373,7 +371,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Producer.SendProvisionRequest(host, &protocol.ProvisionRequest{
+	if err := s.Producer.SendProvisionRequest(host.Identifier(), &protocol.ProvisionRequest{
 		Instance: &protocol.Instance{
 			InstanceID:    inst.ID,
 			Version:       req.ServerVersion,

@@ -1,10 +1,9 @@
-package task
+package instance
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/zllovesuki/rmc/instance"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
 
@@ -12,32 +11,32 @@ import (
 	"go.uber.org/zap"
 )
 
-type InstanceTaskOptions struct {
-	InstanceManager *instance.Manager
-	Producer        broker.Producer
+type TaskOptions struct {
+	InstanceManager *Manager
+	Consumer        broker.Consumer
 	Logger          *zap.Logger
 }
 
-type InstanceTask struct {
-	InstanceTaskOptions
+type Task struct {
+	TaskOptions
 }
 
-func NewInstanceTask(option InstanceTaskOptions) (*InstanceTask, error) {
+func NewTask(option TaskOptions) (*Task, error) {
 	if option.InstanceManager == nil {
 		return nil, fmt.Errorf("nil InstanceManager is invalid")
 	}
-	if option.Producer == nil {
-		return nil, fmt.Errorf("nil Producer is invalid")
+	if option.Consumer == nil {
+		return nil, fmt.Errorf("nil Consumer is invalid")
 	}
 	if option.Logger == nil {
 		return nil, fmt.Errorf("nil Logger is invalid")
 	}
-	return &InstanceTask{
-		InstanceTaskOptions: option,
+	return &Task{
+		TaskOptions: option,
 	}, nil
 }
 
-func (t *InstanceTask) handleControlReply(ctx context.Context, cChan <-chan *protocol.ControlReply) {
+func (t *Task) handleControlReply(ctx context.Context, cChan <-chan *protocol.ControlReply) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -58,7 +57,7 @@ func (t *InstanceTask) handleControlReply(ctx context.Context, cChan <-chan *pro
 				zap.String("InstanceID", instanceID),
 			)
 
-			lambda := func(current *instance.Instance, desired *instance.Instance) (shouldSave bool) {
+			lambda := func(current *Instance, desired *Instance) (shouldSave bool) {
 				if current == nil {
 					logger.Error("nil Instance when processing control reply")
 					return
@@ -71,28 +70,28 @@ func (t *InstanceTask) handleControlReply(ctx context.Context, cChan <-chan *pro
 				case protocol.ControlRequest_START:
 					switch reply.GetResult() {
 					case protocol.ControlReply_SUCCESS:
-						desired.State = instance.StateRunning
+						desired.State = StateRunning
 					case protocol.ControlReply_FAILURE:
 						logger.Error("Instance Control START was not successful")
-						desired.State = instance.StateStopped
+						desired.State = StateStopped
 					default:
 						logger.Error("Control START replied undetermined result")
-						desired.State = instance.StateUnknown
+						desired.State = StateUnknown
 					}
 				case protocol.ControlRequest_STOP:
 					switch reply.GetResult() {
 					case protocol.ControlReply_SUCCESS:
-						desired.State = instance.StateStopped
+						desired.State = StateStopped
 					case protocol.ControlReply_FAILURE:
 						logger.Error("Instance Control STOP was not successful")
-						desired.State = instance.StateRunning
+						desired.State = StateRunning
 					default:
 						logger.Error("Control STOP replied undetermined result")
-						desired.State = instance.StateUnknown
+						desired.State = StateUnknown
 					}
 				default:
 					logger.Error("ControlRequest had undefined action")
-					desired.State = instance.StateUnknown
+					desired.State = StateUnknown
 				}
 
 				shouldSave = true
@@ -107,7 +106,7 @@ func (t *InstanceTask) handleControlReply(ctx context.Context, cChan <-chan *pro
 	}
 }
 
-func (t *InstanceTask) handleProvisionReply(ctx context.Context, pChan <-chan *protocol.ProvisionReply) {
+func (t *Task) handleProvisionReply(ctx context.Context, pChan <-chan *protocol.ProvisionReply) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -128,7 +127,7 @@ func (t *InstanceTask) handleProvisionReply(ctx context.Context, pChan <-chan *p
 				zap.String("InstanceID", instanceID),
 			)
 
-			lambda := func(current *instance.Instance, desired *instance.Instance) (shouldSave bool) {
+			lambda := func(current *Instance, desired *Instance) (shouldSave bool) {
 				if current == nil {
 					logger.Error("nil Instance when processing provision reply")
 					return
@@ -143,29 +142,29 @@ func (t *InstanceTask) handleProvisionReply(ctx context.Context, pChan <-chan *p
 					case protocol.ProvisionReply_SUCCESS:
 						desired.ServerAddr = repliedInstance.GetAddr()
 						desired.ServerPort = repliedInstance.GetPort()
-						desired.State = instance.StateRunning
+						desired.State = StateRunning
 					case protocol.ProvisionReply_FAILURE:
 						logger.Error("Instance provision CREATE was not successful")
-						desired.State = instance.StateError
+						desired.State = StateError
 					default:
 						logger.Error("Provision CREATE replied undetermined result")
-						desired.State = instance.StateUnknown
+						desired.State = StateUnknown
 					}
 				case protocol.ProvisionRequest_DELETE:
 					switch reply.GetResult() {
 					case protocol.ProvisionReply_SUCCESS:
-						desired.State = instance.StateRemoved
-						desired.Status = instance.StatusTerminated
+						desired.State = StateRemoved
+						desired.Status = StatusTerminated
 					case protocol.ProvisionReply_FAILURE:
 						logger.Error("Instance provision DELETE was not successful")
-						desired.State = instance.StateError
+						desired.State = StateError
 					default:
 						logger.Error("Provision DELETE replied undetermined result")
-						desired.State = instance.StateUnknown
+						desired.State = StateUnknown
 					}
 				default:
 					logger.Error("ProvisionRequest had undefined action")
-					desired.State = instance.StateUnknown
+					desired.State = StateUnknown
 				}
 
 				shouldSave = true
@@ -180,12 +179,12 @@ func (t *InstanceTask) handleProvisionReply(ctx context.Context, pChan <-chan *p
 	}
 }
 
-func (t *InstanceTask) HandleReply(ctx context.Context) error {
-	cChan, err := t.Producer.ReceiveControlReply(ctx)
+func (t *Task) HandleReply(ctx context.Context) error {
+	cChan, err := t.Consumer.ReceiveControlReply(ctx)
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot get control reply channel")
 	}
-	pChan, err := t.Producer.ReceiveProvisionReply(ctx)
+	pChan, err := t.Consumer.ReceiveProvisionReply(ctx)
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot get provision reply channel")
 	}

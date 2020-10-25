@@ -2,8 +2,8 @@ package broker
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/zllovesuki/rmc/host"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
 
@@ -35,48 +35,77 @@ func NewAMQPBroker(amqpURI string) (*AMQPBroker, error) {
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot connect to Message Broker")
 	}
-	pChan, err := amqpConn.Channel()
+	return &AMQPBroker{
+		connection: amqpConn,
+	}, nil
+}
+
+// Producer will establish a channel to broker and returns a Producer
+func (a *AMQPBroker) Producer() (broker.Producer, error) {
+	var err error
+	a.producerChannel, err = a.connection.Channel()
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot create producer channel")
 	}
-	cChan, err := amqpConn.Channel()
-	if err != nil {
-		return nil, extErrors.Wrap(err, "Cannot create consumer channel")
+	if err := a.setupExchanges(); err != nil {
+		return nil, extErrors.Wrap(err, "Cannot declare as Producer")
 	}
-	broker := &AMQPBroker{
-		connection:      amqpConn,
-		producerChannel: pChan,
-		consumerChannel: cChan,
-	}
-	if err := broker.setupExchange(instanceControlExchange); err != nil {
-		return nil, extErrors.Wrap(err, "Cannot declare exchange for control requests")
-	}
-	if err := broker.setupExchange(instanceProvisionExchange); err != nil {
-		return nil, extErrors.Wrap(err, "Cannot declare exchange for provision requests")
-	}
-	if err := broker.setupExchange(hostHeartbeatExchange); err != nil {
-		return nil, extErrors.Wrap(err, "Cannot declare exchange for provision requests")
-	}
-
-	return broker, nil
+	return a, nil
 }
 
-func (a *AMQPBroker) setupExchange(exchange string) error {
-	return a.producerChannel.ExchangeDeclare(
-		exchange, // name
-		"topic",  // type
-		true,     // durable
-		false,    // auto-deleted
-		false,    // internal
-		false,    // no-wait
-		nil,      // arguments
-	)
+// Consumer will establish a channel to broker and returns a Consumer
+func (a *AMQPBroker) Consumer() (broker.Consumer, error) {
+	var err error
+	a.consumerChannel, err = a.connection.Channel()
+	if err != nil {
+		return nil, extErrors.Wrap(err, "Cannot create producer channel")
+	}
+	if err := a.setupExchanges(); err != nil {
+		return nil, extErrors.Wrap(err, "Cannot declare as Consumer")
+	}
+	return a, nil
+}
+
+func (a *AMQPBroker) setupExchanges() error {
+	exchanges := []string{
+		instanceControlExchange,
+		instanceProvisionExchange,
+		hostHeartbeatExchange,
+	}
+	var channel *amqp.Channel
+	if a.producerChannel != nil {
+		channel = a.producerChannel
+	}
+	if a.consumerChannel != nil {
+		channel = a.consumerChannel
+	}
+	if channel == nil {
+		return fmt.Errorf("No open channel to setup exchanges")
+	}
+	for _, exchange := range exchanges {
+		if err := channel.ExchangeDeclare(
+			exchange, // name
+			"topic",  // type
+			true,     // durable
+			false,    // auto-deleted
+			false,    // internal
+			false,    // no-wait
+			nil,      // arguments
+		); err != nil {
+			return extErrors.Wrap(err, "Cannot setup exchange")
+		}
+	}
+	return nil
 }
 
 // Close will close the channel and connection to release resources
 func (a *AMQPBroker) Close() {
-	a.producerChannel.Close()
-	a.consumerChannel.Close()
+	if a.producerChannel != nil {
+		a.producerChannel.Close()
+	}
+	if a.consumerChannel != nil {
+		a.consumerChannel.Close()
+	}
 	a.connection.Close()
 }
 
@@ -94,24 +123,24 @@ func (a *AMQPBroker) publishViaRoutingKey(exchange, routingKey string, body []by
 }
 
 // SendControlRequest will send the request to control to a specific host
-func (a *AMQPBroker) SendControlRequest(host *host.Host, p *protocol.ControlRequest) error {
+func (a *AMQPBroker) SendControlRequest(hostIdentifier string, p *protocol.ControlRequest) error {
 	protoBytes, err := proto.Marshal(p)
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot encode message into bytes")
 	}
-	if err := a.publishViaRoutingKey(instanceControlExchange, host.Identifier(), protoBytes); err != nil {
+	if err := a.publishViaRoutingKey(instanceControlExchange, hostIdentifier, protoBytes); err != nil {
 		return extErrors.Wrap(err, "Cannot publish control request")
 	}
 	return nil
 }
 
 // SendProvisionRequest will send request to provision to a specific host
-func (a *AMQPBroker) SendProvisionRequest(host *host.Host, p *protocol.ProvisionRequest) error {
+func (a *AMQPBroker) SendProvisionRequest(hostIdentifier string, p *protocol.ProvisionRequest) error {
 	protoBytes, err := proto.Marshal(p)
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot encode message into bytes")
 	}
-	if err := a.publishViaRoutingKey(instanceProvisionExchange, host.Identifier(), protoBytes); err != nil {
+	if err := a.publishViaRoutingKey(instanceProvisionExchange, hostIdentifier, protoBytes); err != nil {
 		return extErrors.Wrap(err, "Cannot publish provision request")
 	}
 	return nil
@@ -174,9 +203,9 @@ func (a *AMQPBroker) getMsgChannel(qName, exchange, routingKey string) (<-chan a
 }
 
 // ReceiveControlRequest will consumer control requests directed to the host
-func (a *AMQPBroker) ReceiveControlRequest(ctx context.Context, host *host.Host) (<-chan *protocol.ControlRequest, error) {
-	name := "control_" + host.Identifier()
-	msgChan, err := a.getMsgChannel(name, instanceControlExchange, host.Identifier())
+func (a *AMQPBroker) ReceiveControlRequest(ctx context.Context, hostIdentifier string) (<-chan *protocol.ControlRequest, error) {
+	name := "control_" + hostIdentifier
+	msgChan, err := a.getMsgChannel(name, instanceControlExchange, hostIdentifier)
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot setup consumer")
 	}
@@ -201,9 +230,9 @@ func (a *AMQPBroker) ReceiveControlRequest(ctx context.Context, host *host.Host)
 }
 
 // ReceiveProvisionRequest will consumer provision requests directed to the host
-func (a *AMQPBroker) ReceiveProvisionRequest(ctx context.Context, host *host.Host) (<-chan *protocol.ProvisionRequest, error) {
-	name := "provision_" + host.Identifier()
-	msgChan, err := a.getMsgChannel(name, instanceProvisionExchange, host.Identifier())
+func (a *AMQPBroker) ReceiveProvisionRequest(ctx context.Context, hostIdentifier string) (<-chan *protocol.ProvisionRequest, error) {
+	name := "provision_" + hostIdentifier
+	msgChan, err := a.getMsgChannel(name, instanceProvisionExchange, hostIdentifier)
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot setup consumer")
 	}

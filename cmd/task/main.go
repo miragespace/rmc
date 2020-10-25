@@ -13,7 +13,6 @@ import (
 	"github.com/zllovesuki/rmc/db"
 	"github.com/zllovesuki/rmc/host"
 	"github.com/zllovesuki/rmc/instance"
-	"github.com/zllovesuki/rmc/task"
 
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
@@ -98,6 +97,12 @@ func main() {
 		)
 	}
 	defer amqpBroker.Close()
+	consumer, err := amqpBroker.Consumer()
+	if err != nil {
+		logger.Fatal("Cannot setup broker as consumer",
+			zap.Error(err),
+		)
+	}
 
 	instanceManager, err := instance.NewManager(logger, db)
 	if err != nil {
@@ -113,9 +118,9 @@ func main() {
 		)
 	}
 
-	instanceTask, err := task.NewInstanceTask(task.InstanceTaskOptions{
+	instanceTask, err := instance.NewTask(instance.TaskOptions{
 		InstanceManager: instanceManager,
-		Producer:        amqpBroker,
+		Consumer:        consumer,
 		Logger:          logger,
 	})
 	if err != nil {
@@ -124,9 +129,9 @@ func main() {
 		)
 	}
 
-	hostTask, err := task.NewHostTask(task.HostTaskOptions{
+	hostTask, err := host.NewTask(host.TaskOptions{
 		HostManager: hostManager,
-		Producer:    amqpBroker,
+		Consumer:    consumer,
 		Logger:      logger,
 	})
 	if err != nil {

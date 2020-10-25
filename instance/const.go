@@ -6,7 +6,6 @@ package instance
 // Stopping -> Stopped
 // Stopped -> Starting/Removing
 // Starting -> Running
-// Stopping -> Stopped
 // Removing -> Removed/Error
 // It is possible that PreviousState is "Running/Stopping" but State is "Running/Stopping"
 // That probably means request was sent and completed successful, and background task was able to LambdaUpdate,
