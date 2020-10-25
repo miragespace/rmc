@@ -15,6 +15,7 @@ type TaskOptions struct {
 	HostManager *Manager
 	Consumer    broker.Consumer
 	Logger      *zap.Logger
+	Concurrency int
 }
 
 type Task struct {
@@ -30,6 +31,9 @@ func NewTask(option TaskOptions) (*Task, error) {
 	}
 	if option.Logger == nil {
 		return nil, fmt.Errorf("nil Logger is invalid")
+	}
+	if option.Concurrency < 1 {
+		return nil, fmt.Errorf("invalid Concurrency")
 	}
 	return &Task{
 		TaskOptions: option,
@@ -52,10 +56,12 @@ func (t *Task) handleHeartbeat(ctx context.Context, hChan <-chan *protocol.Heart
 }
 
 func (t *Task) HandleReply(ctx context.Context) error {
-	hChan, err := t.Consumer.ReceiveHeartbeat(ctx)
-	if err != nil {
-		return extErrors.Wrap(err, "Cannot get heartbeat channel")
+	for i := 0; i < t.Concurrency; i++ {
+		hChan, err := t.Consumer.ReceiveHeartbeat(ctx)
+		if err != nil {
+			return extErrors.Wrap(err, "Cannot get heartbeat channel")
+		}
+		go t.handleHeartbeat(ctx, hChan)
 	}
-	go t.handleHeartbeat(ctx, hChan)
 	return nil
 }

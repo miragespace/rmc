@@ -122,6 +122,7 @@ func main() {
 		InstanceManager: instanceManager,
 		Consumer:        consumer,
 		Logger:          logger,
+		Concurrency:     3,
 	})
 	if err != nil {
 		logger.Fatal("Cannot get instance task",
@@ -133,6 +134,7 @@ func main() {
 		HostManager: hostManager,
 		Consumer:    consumer,
 		Logger:      logger,
+		Concurrency: 3,
 	})
 	if err != nil {
 		logger.Fatal("Cannot get host task",
