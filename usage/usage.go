@@ -2,16 +2,17 @@ package usage
 
 import "time"
 
-type Event string
+type Action string
 
 const (
-	Start Event = "Start"
-	End   Event = "End"
+	Start Action = "Start"
+	Stop  Action = "Stop"
 )
 
-// Usage describes the time period of applicable charges to a subscription
+// Usage describes the actions taken on an instance
 type Usage struct {
-	SubscriptionID string     `json:"subscriptionId" gorm:"primaryKey"`
-	Start          time.Time  `json:"start"`
-	End            *time.Time `json:"end"`
+	InstanceID string `gorm:"not null;index"`
+	Action     Action
+	When       time.Time
+	Accounted  bool `gorm:"not null;default:false"`
 }
