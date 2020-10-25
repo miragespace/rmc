@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/zllovesuki/rmc/auth"
+	resp "github.com/zllovesuki/rmc/response"
 
 	"github.com/go-chi/chi"
 	"github.com/stripe/stripe-go/v71"
@@ -45,7 +46,7 @@ func (s *Service) setupPayment(w http.ResponseWriter, r *http.Request) {
 
 	var req PaymentSetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		resp.WriteError(w, r, resp.ErrInvalidJson())
 		return
 	}
 
@@ -59,12 +60,7 @@ func (s *Service) setupPayment(w http.ResponseWriter, r *http.Request) {
 		params,
 	)
 	if err != nil {
-		w.Header().Add("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(struct {
-			Error error `json:"error"`
-		}{
-			err,
-		})
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to attach payment").WithResult(err))
 		return
 	}
 
@@ -80,7 +76,7 @@ func (s *Service) setupPayment(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to update payment method in Stripe",
 			zap.Error(err),
 		)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup payment"))
 		return
 	}
 
@@ -100,7 +96,7 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 
 	var req SubscriptionSetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		resp.WriteError(w, r, resp.ErrInvalidJson())
 		return
 	}
 
@@ -121,16 +117,15 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to setup subscription in Stripe",
 			zap.Error(err),
 		)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription"))
 		return
 	}
 
-	w.Header().Add("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(subscription)
+	resp.WriteResponse(w, r, subscription)
 }
 
 func (s *Service) Router() http.Handler {
-	r := chi.NewRouter().With(auth.ClaimCheck(s.Logger))
+	r := chi.NewRouter()
 
 	r.Post("/initialSetup", s.setupPayment)
 	r.Post("/", s.setupSubscription)

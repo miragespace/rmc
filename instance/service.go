@@ -8,6 +8,7 @@ import (
 
 	"github.com/zllovesuki/rmc/auth"
 	"github.com/zllovesuki/rmc/host"
+	resp "github.com/zllovesuki/rmc/response"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
 	"github.com/zllovesuki/rmc/subscription"
@@ -68,17 +69,16 @@ func (s *Service) getInstance(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to query instance",
 			zap.Error(err),
 		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Cannot get details about the instance"))
 		return
 	}
 
 	if inst == nil || inst.CustomerID != claims.ID || inst.Status != StatusActive {
-		http.Error(w, "not found", http.StatusNotFound)
+		resp.WriteError(w, r, resp.ErrNotFound().AddMessages("Cannot find instance with specific ID"))
 		return
 	}
 
-	w.Header().Add("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(inst)
+	resp.WriteResponse(w, r, inst)
 }
 
 func (s *Service) listInstances(w http.ResponseWriter, r *http.Request) {
@@ -95,12 +95,11 @@ func (s *Service) listInstances(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to list instances by customer id",
 			zap.Error(err),
 		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Cannot get the list of instances"))
 		return
 	}
 
-	w.Header().Add("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	resp.WriteResponse(w, r, results)
 }
 
 // ControlRequest contains the request from client to control an existing instance.
@@ -120,13 +119,13 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 
 	var req ControlRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		resp.WriteError(w, r, resp.ErrInvalidJson())
 		return
 	}
 
 	lambda := func(currenState *Instance, desiredState *Instance) (shouldSave bool) {
 		if currenState == nil || currenState.CustomerID != claims.ID || currenState.Status != StatusActive {
-			http.Error(w, "not found", http.StatusNotFound)
+			resp.WriteError(w, r, resp.ErrNotFound().AddMessages("Cannot find instance with specific ID"))
 			return
 		}
 		logger = logger.With(
@@ -138,20 +137,20 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 		switch req.Action {
 		case "Start":
 			if currenState.State != StateStopped {
-				http.Error(w, "instance not in stopped state", http.StatusBadRequest)
+				resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Instance not in 'Stopped' state"))
 				return
 			}
 			action = protocol.ControlRequest_START
 			nextState = StateStarting
 		case "Stop":
 			if currenState.State != StateRunning {
-				http.Error(w, "instance not in running state", http.StatusBadRequest)
+				resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Instance not in 'Running' state"))
 				return
 			}
 			action = protocol.ControlRequest_STOP
 			nextState = StateStopping
 		default:
-			http.Error(w, "unknown action", http.StatusBadRequest)
+			resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Unknown action"))
 			return
 		}
 
@@ -166,7 +165,7 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 			logger.Error("Unable to send control request",
 				zap.Error(err),
 			)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to update Instance status"))
 			return
 		}
 
@@ -181,7 +180,7 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to update instance status",
 			zap.Error(err),
 		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to update Instance status"))
 		return
 	}
 
@@ -205,12 +204,12 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 
 	lambda := func(currentState *Instance, desireState *Instance) (shouldSave bool) {
 		if currentState == nil || currentState.CustomerID != claims.ID || currentState.Status != StatusActive {
-			http.Error(w, "not found", http.StatusNotFound)
+			resp.WriteError(w, r, resp.ErrNotFound().AddMessages("Cannot find instance with specific ID"))
 			return
 		}
 
 		if currentState.State != StateStopped {
-			http.Error(w, "cannot delete when it is running", http.StatusBadRequest)
+			resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Instance not in 'Stopped' state"))
 			return
 		}
 		logger = logger.With(
@@ -222,7 +221,7 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 			logger.Error("Unable to get instance Host",
 				zap.Error(err),
 			)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to delete Instance"))
 			return
 		}
 
@@ -235,7 +234,7 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 			logger.Error("Unable to send DELETE provision request",
 				zap.Error(err),
 			)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to delete Instance"))
 			return
 		}
 
@@ -249,7 +248,7 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to delete instance",
 			zap.Error(err),
 		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to delete Instance"))
 		return
 	}
 
@@ -263,7 +262,7 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 			Error("Unable to cancel Stripe Subscription",
 				zap.Error(err),
 			)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to delete Instance"))
 		return
 	}
 
@@ -287,7 +286,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 
 	var req NewInstanceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		resp.WriteError(w, r, resp.ErrInvalidJson())
 		return
 	}
 
@@ -298,11 +297,11 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to verify subscription validity",
 			zap.Error(err),
 		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance"))
 		return
 	}
 	if !valid {
-		http.Error(w, "not authorized", http.StatusUnauthorized)
+		resp.WriteError(w, r, resp.ErrConflict().WithMessage("Duplicate subscription found"))
 		return
 	}
 
@@ -314,11 +313,11 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to verify duplicate subscription existence",
 			zap.Error(err),
 		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance"))
 		return
 	}
 	if existingInst != nil {
-		http.Error(w, "duplicate subscription", http.StatusConflict)
+		resp.WriteError(w, r, resp.ErrConflict().WithMessage("Duplicate subscription found"))
 		return
 	}
 
@@ -327,7 +326,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to get a random UUID",
 			zap.Error(err),
 		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance"))
 		return
 	}
 
@@ -336,14 +335,14 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to find next available host",
 			zap.Error(err),
 		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance"))
 		return
 	}
 
 	if host == nil {
 		// TODO: make it more obvious to user and to operator
 		logger.Error("No available host for provisioning")
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance"))
 		return
 	}
 
@@ -366,7 +365,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to create instance",
 			zap.Error(err),
 		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance"))
 		return
 	}
 
@@ -381,17 +380,16 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to send CREATE provision request",
 			zap.Error(err),
 		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance"))
 		return
 	}
 
-	w.Header().Add("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(inst)
+	resp.WriteResponse(w, r, inst)
 }
 
 // Router will return the routes under instance API
 func (s *Service) Router() http.Handler {
-	r := chi.NewRouter().With(auth.ClaimCheck(s.Logger))
+	r := chi.NewRouter()
 
 	r.Get("/", s.listInstances)
 	r.Post("/", s.newInstance)

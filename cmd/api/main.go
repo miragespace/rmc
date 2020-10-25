@@ -18,6 +18,7 @@ import (
 	"github.com/zllovesuki/rmc/external"
 	"github.com/zllovesuki/rmc/host"
 	"github.com/zllovesuki/rmc/instance"
+	"github.com/zllovesuki/rmc/response"
 	"github.com/zllovesuki/rmc/subscription"
 
 	"github.com/TheZeroSlave/zapsentry"
@@ -231,7 +232,7 @@ func main() {
 
 	r.Mount("/customers", customerRouter.Router())
 
-	authMiddleware := chi.Chain(auth.Middleware())
+	authMiddleware := chi.Chain(auth.Middleware(), auth.ClaimCheck())
 	authenticated := r.With(authMiddleware...)
 
 	authenticated.Mount("/instances", instanceRouter.Router())
@@ -243,6 +244,10 @@ func main() {
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// TODO: redirect user to frontend
 		fmt.Fprintf(w, "Hello World!")
+	})
+
+	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		response.WriteError(w, r, response.ErrMethodNotAllowed())
 	})
 
 	srv := &http.Server{

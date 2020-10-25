@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/zllovesuki/rmc/auth"
+	resp "github.com/zllovesuki/rmc/response"
 
 	"github.com/go-chi/chi"
 	"github.com/go-playground/validator/v10"
@@ -51,13 +52,13 @@ func NewService(option ServiceOptions) (*Service, error) {
 func (s *Service) requestLogin(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		resp.WriteError(w, r, resp.ErrInvalidJson())
 		return
 	}
 	logger := s.Logger.With(zap.String("email", req.Email))
 
 	if err := validate.Struct(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		resp.WriteError(w, r, resp.ErrBadRequest().WithMessage("Invalid email"))
 		return
 	}
 
@@ -66,7 +67,7 @@ func (s *Service) requestLogin(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to send login PIN",
 			zap.Error(err),
 		)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrUnexpected().WithMessage("Unable to request login token"))
 		return
 	}
 
@@ -80,7 +81,7 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	emailBytes, err := base64.StdEncoding.DecodeString(b64Email)
 	if err != nil {
-		http.Error(w, "invalid uid", http.StatusBadRequest)
+		resp.WriteError(w, r, resp.ErrBadRequest().WithMessage("Invalid UID was provided"))
 		return
 	}
 
@@ -93,12 +94,12 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to verify login PIN",
 			zap.Error(err),
 		)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrVerifyToken())
 		return
 	}
 
 	if !valid {
-		http.Error(w, "not authorized", http.StatusUnauthorized)
+		resp.WriteError(w, r, resp.ErrUnauthorized().WithMessage("Invalid token"))
 		return
 	}
 
@@ -108,7 +109,7 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to create Customer",
 			zap.Error(err),
 		)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrVerifyToken())
 		return
 	}
 
@@ -119,7 +120,7 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 			logger.Error("Unable to create Customer",
 				zap.Error(err),
 			)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			resp.WriteError(w, r, resp.ErrVerifyToken())
 			return
 		}
 	}
@@ -132,12 +133,11 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to generate token",
 			zap.Error(err),
 		)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		resp.WriteError(w, r, resp.ErrVerifyToken())
 		return
 	}
 
-	w.Header().Add("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(struct {
+	resp.WriteResponse(w, r, struct {
 		Token string `json:"token"`
 	}{
 		Token: jwtToken,

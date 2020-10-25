@@ -40,9 +40,9 @@ Services:
 
 2. ~~Add hooks to manage instances~~ Dependency injection
 
-3. Refactor error handling into a package
+3. ~~Refactor error handling into a package~~ WIP
 
-4. Make all response JSON
+4. ~~Make all response JSON~~ WIP
 
 5. Add tests to all packages
 
