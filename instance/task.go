@@ -15,6 +15,7 @@ type TaskOptions struct {
 	InstanceManager *Manager
 	Consumer        broker.Consumer
 	Logger          *zap.Logger
+	Concurrency     int
 }
 
 type Task struct {
@@ -30,6 +31,9 @@ func NewTask(option TaskOptions) (*Task, error) {
 	}
 	if option.Logger == nil {
 		return nil, fmt.Errorf("nil Logger is invalid")
+	}
+	if option.Concurrency < 1 {
+		return nil, fmt.Errorf("invalid Concurrency")
 	}
 	return &Task{
 		TaskOptions: option,
@@ -180,15 +184,17 @@ func (t *Task) handleProvisionReply(ctx context.Context, pChan <-chan *protocol.
 }
 
 func (t *Task) HandleReply(ctx context.Context) error {
-	cChan, err := t.Consumer.ReceiveControlReply(ctx)
-	if err != nil {
-		return extErrors.Wrap(err, "Cannot get control reply channel")
+	for i := 0; i < t.Concurrency; i++ {
+		cChan, err := t.Consumer.ReceiveControlReply(ctx)
+		if err != nil {
+			return extErrors.Wrap(err, "Cannot get control reply channel")
+		}
+		pChan, err := t.Consumer.ReceiveProvisionReply(ctx)
+		if err != nil {
+			return extErrors.Wrap(err, "Cannot get provision reply channel")
+		}
+		go t.handleControlReply(ctx, cChan)
+		go t.handleProvisionReply(ctx, pChan)
 	}
-	pChan, err := t.Consumer.ReceiveProvisionReply(ctx)
-	if err != nil {
-		return extErrors.Wrap(err, "Cannot get provision reply channel")
-	}
-	go t.handleControlReply(ctx, cChan)
-	go t.handleProvisionReply(ctx, pChan)
 	return nil
 }

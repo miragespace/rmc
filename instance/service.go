@@ -256,12 +256,17 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := s.InstanceManager.LambdaUpdate(ctx, instanceID, lambda)
+	inst, err := s.InstanceManager.LambdaUpdate(ctx, instanceID, lambda)
 	if err != nil {
 		logger.Error("Unable to delete instance",
 			zap.Error(err),
 		)
 		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to delete Instance"))
+		return
+	}
+
+	if inst == nil {
+		// response was already sent in lambda
 		return
 	}
 
