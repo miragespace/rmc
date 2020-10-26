@@ -123,16 +123,14 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var action protocol.ControlRequest_ControlAction // side effect in lambda
+
 	lambda := func(current *Instance, desired *Instance) (shouldSave bool) {
 		if current == nil || current.CustomerID != claims.ID || current.Status != StatusActive {
 			resp.WriteError(w, r, resp.ErrNotFound().AddMessages("Cannot find instance with specific ID"))
 			return
 		}
-		logger = logger.With(
-			zap.String("HostName", current.HostName),
-		)
 
-		var action protocol.ControlRequest_ControlAction
 		var nextState string
 		switch req.Action {
 		case "Start":
@@ -151,29 +149,6 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 			nextState = StateStopping
 		default:
 			resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Unknown action"))
-			return
-		}
-
-		host, err := s.HostManager.GetHostByName(ctx, current.HostName)
-		if err != nil {
-			logger.Error("Unable to get instance Host",
-				zap.Error(err),
-			)
-			resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to update Instance status"))
-			return
-		}
-
-		if err := s.Producer.SendControlRequest(host.Identifier(),
-			&protocol.ControlRequest{
-				Instance: &protocol.Instance{
-					InstanceID: current.ID,
-				},
-				Action: action,
-			}); err != nil {
-			logger.Error("Unable to send control request",
-				zap.Error(err),
-			)
-			resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to update Instance status"))
 			return
 		}
 
@@ -198,7 +173,26 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// background task should handle the usage update
+	go func() {
+		host := host.Host{
+			Name: inst.HostName,
+		}
+		if err := s.Producer.SendControlRequest(host.Identifier(),
+			&protocol.ControlRequest{
+				Instance: &protocol.Instance{
+					InstanceID: inst.ID,
+				},
+				Action: action, // this must be defined if inst != nil
+			}); err != nil {
+			logger.Error("Unable to send control request",
+				zap.Error(err),
+				zap.String("HostName", inst.HostName),
+			)
+			// fail through: as long as database state is consistent, manual mediation is possible
+		}
+	}()
+
+	// background task should handle the usage update, if START/STOP was successful
 
 	w.WriteHeader(http.StatusAccepted)
 }
@@ -223,31 +217,6 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 			resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Instance not in 'Stopped' state"))
 			return
 		}
-		logger = logger.With(
-			zap.String("HostName", current.HostName),
-		)
-
-		host, err := s.HostManager.GetHostByName(ctx, current.HostName)
-		if err != nil {
-			logger.Error("Unable to get instance Host",
-				zap.Error(err),
-			)
-			resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to delete Instance"))
-			return
-		}
-
-		if err := s.Producer.SendProvisionRequest(host.Identifier(), &protocol.ProvisionRequest{
-			Instance: &protocol.Instance{
-				InstanceID: current.ID,
-			},
-			Action: protocol.ProvisionRequest_DELETE,
-		}); err != nil {
-			logger.Error("Unable to send DELETE provision request",
-				zap.Error(err),
-			)
-			resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to delete Instance"))
-			return
-		}
 
 		desired.PreviousState = current.State
 		desired.State = StateRemoving
@@ -270,7 +239,25 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// background task should handle cancelling subscription
+	go func() {
+		host := host.Host{
+			Name: inst.HostName,
+		}
+		if err := s.Producer.SendProvisionRequest(host.Identifier(), &protocol.ProvisionRequest{
+			Instance: &protocol.Instance{
+				InstanceID: inst.ID,
+			},
+			Action: protocol.ProvisionRequest_DELETE,
+		}); err != nil {
+			logger.Error("Unable to send DELETE provision request",
+				zap.Error(err),
+				zap.String("HostName", inst.HostName),
+			)
+			// fail through: as long as database state is consistent, manual mediation is possible
+		}
+	}()
+
+	// background task should handle cancelling subscription, if DELETE was successful
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -297,6 +284,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// TODO: validate server versions/java or not
+	// TODO: check which plan associated with the subscription
 
 	valid, err := s.SubscriptionManager.ValidSubscription(ctx, claims.ID, req.SubscriptionID)
 	if err != nil {
@@ -307,14 +295,14 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !valid {
-		resp.WriteError(w, r, resp.ErrConflict().WithMessage("Duplicate subscription found"))
+		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Invalid Subscription"))
 		return
 	}
 
 	logger = logger.With(zap.String("SubscriptionID", req.SubscriptionID))
 
 	// make sure user is not double dipping
-	existingInst, err := s.InstanceManager.GetBySubscriptionId(ctx, req.SubscriptionID)
+	existingInst, err := s.InstanceManager.GetBySubscriptionID(ctx, req.SubscriptionID)
 	if err != nil {
 		logger.Error("Unable to verify duplicate subscription existence",
 			zap.Error(err),
@@ -323,7 +311,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if existingInst != nil {
-		resp.WriteError(w, r, resp.ErrConflict().WithMessage("Duplicate subscription found"))
+		resp.WriteError(w, r, resp.ErrConflict().AddMessages("Duplicate subscription found"))
 		return
 	}
 
@@ -347,8 +335,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 
 	if host == nil {
 		// TODO: make it more obvious to user and to operator
-		logger.Error("No available host for provisioning")
-		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance"))
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance", "No suitable host available"))
 		return
 	}
 
@@ -376,20 +363,21 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Producer.SendProvisionRequest(host.Identifier(), &protocol.ProvisionRequest{
-		Instance: &protocol.Instance{
-			InstanceID:    inst.ID,
-			Version:       req.ServerVersion,
-			IsJavaEdition: req.IsJavaEdition,
-		},
-		Action: protocol.ProvisionRequest_CREATE,
-	}); err != nil {
-		logger.Error("Unable to send CREATE provision request",
-			zap.Error(err),
-		)
-		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance"))
-		return
-	}
+	go func() {
+		if err := s.Producer.SendProvisionRequest(host.Identifier(), &protocol.ProvisionRequest{
+			Instance: &protocol.Instance{
+				InstanceID:    inst.ID,
+				Version:       req.ServerVersion,
+				IsJavaEdition: req.IsJavaEdition,
+			},
+			Action: protocol.ProvisionRequest_CREATE,
+		}); err != nil {
+			logger.Error("Unable to send CREATE provision request",
+				zap.Error(err),
+			)
+			// fail through: as long as database state is consistent, manual mediation is possible
+		}
+	}()
 
 	resp.WriteResponse(w, r, inst)
 }

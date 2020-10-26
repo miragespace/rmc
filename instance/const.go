@@ -7,10 +7,7 @@ package instance
 // Stopped -> Starting/Removing
 // Starting -> Running
 // Removing -> Removed/Error
-// It is possible that PreviousState is "Running/Stopping" but State is "Running/Stopping"
-// That probably means request was sent and completed successful, and background task was able to LambdaUpdate,
-// but LambdaUpdate in service was not successful. See task.go for mediation steps
-// (I should make a FSM for this)
+// Instance.State should never be "Unknown." Check PreviousState if State is Error
 const (
 	StateUnknown      string = "Unknown"
 	StateError               = "Error"

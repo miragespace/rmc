@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/zllovesuki/rmc/usage"
+
 	"gorm.io/gorm"
 )
 
@@ -47,5 +48,7 @@ func (i *Instance) AfterUpdate(tx *gorm.DB) error {
 	if record == nil {
 		return nil
 	}
-	return tx.Create(record).Error
+	// TODO: Figure out how to do usage correctly
+	return nil
+	// return tx.Create(record).Error
 }

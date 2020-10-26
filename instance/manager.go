@@ -28,6 +28,7 @@ func NewManager(logger *zap.Logger, db *gorm.DB) (*Manager, error) {
 	}, nil
 }
 
+// Create will insert an Instance record to the database
 func (m *Manager) Create(ctx context.Context, inst *Instance) error {
 	result := m.db.WithContext(ctx).Create(inst)
 	if result.Error != nil {
@@ -39,6 +40,7 @@ func (m *Manager) Create(ctx context.Context, inst *Instance) error {
 	return nil
 }
 
+// GetByID will attempt to lookup and return an Instance record by Instance ID
 func (m *Manager) GetByID(ctx context.Context, id string) (*Instance, error) {
 	inst := Instance{}
 
@@ -58,7 +60,8 @@ func (m *Manager) GetByID(ctx context.Context, id string) (*Instance, error) {
 	return &inst, nil
 }
 
-func (m *Manager) GetBySubscriptionId(ctx context.Context, sid string) (*Instance, error) {
+// GetBySubscriptionID will attempt to lookup and return an Instance record by Subscription ID
+func (m *Manager) GetBySubscriptionID(ctx context.Context, sid string) (*Instance, error) {
 	inst := Instance{}
 
 	result := m.db.WithContext(ctx).Where("subscription_id = ?", sid).First(&inst)
@@ -77,6 +80,7 @@ func (m *Manager) GetBySubscriptionId(ctx context.Context, sid string) (*Instanc
 	return &inst, nil
 }
 
+// Update will update an Instance record without transaction. If transaction is required, use LambdaUpdate
 func (m *Manager) Update(ctx context.Context, inst *Instance) error {
 	result := m.db.WithContext(ctx).Save(inst)
 
@@ -89,6 +93,7 @@ func (m *Manager) Update(ctx context.Context, inst *Instance) error {
 	return nil
 }
 
+// List will return all Instance records by Customer ID. If all == true, it will also return Status == Terminated
 func (m *Manager) List(ctx context.Context, cid string, all bool) ([]Instance, error) {
 	results := make([]Instance, 0, 1)
 	baseQuery := m.db.WithContext(ctx).Order("created_at desc")
