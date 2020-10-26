@@ -85,6 +85,20 @@ func (m *Manager) NextAvailableHost(ctx context.Context) (*Host, error) {
 	return &hosts[0], nil
 }
 
+// List will return all Hosts records by Customer ID.
+func (m *Manager) List(ctx context.Context) ([]Host, error) {
+	results := make([]Host, 0, 1)
+	baseQuery := m.db.WithContext(ctx).Order("last_heartbeat desc")
+	result := baseQuery.Find(&results)
+	if result.Error != nil {
+		m.logger.Error("Database returned error",
+			zap.Error(result.Error),
+		)
+		return nil, result.Error
+	}
+	return results, nil
+}
+
 // ProcessHeartbeat will process the heartbeats from hosts and update their status
 func (m *Manager) ProcessHeartbeat(ctx context.Context, p *protocol.Heartbeat) error {
 	host := p.GetHost()

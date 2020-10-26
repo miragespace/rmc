@@ -20,7 +20,6 @@ import (
 	"github.com/zllovesuki/rmc/instance"
 	"github.com/zllovesuki/rmc/response"
 	"github.com/zllovesuki/rmc/subscription"
-	"github.com/zllovesuki/rmc/usage"
 
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
@@ -195,15 +194,6 @@ func main() {
 		)
 	}
 
-	usageManager, err := usage.NewManager(logger, db)
-	if err != nil {
-		logger.Fatal("Cannot initialize UsageManager",
-			zap.Error(err),
-		)
-	}
-	// TODO: need another background task for usage calculation
-	var _ = usageManager
-
 	// Initialize servce routers
 	customerRouter, err := customer.NewService(customer.ServiceOptions{
 		Auth:            auth,
@@ -238,6 +228,16 @@ func main() {
 		)
 	}
 
+	hostRouter, err := host.NewService(host.ServiceOptions{
+		HostManager: hostManager,
+		Logger:      logger,
+	})
+	if err != nil {
+		logger.Fatal("Cannot initialize Host Service Router",
+			zap.Error(err),
+		)
+	}
+
 	// Initialize http/middlewares
 	r := chi.NewRouter()
 
@@ -256,6 +256,7 @@ func main() {
 
 	authenticated.Mount("/instances", instanceRouter.Router())
 	authenticated.Mount("/subscriptions", subscriptionRouter.Router())
+	authenticated.Mount("/hosts", hostRouter.Router())
 
 	// For application insights
 	r.Mount("/debug", middleware.Profiler())
