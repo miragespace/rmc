@@ -270,6 +270,10 @@ func main() {
 		response.WriteError(w, r, response.ErrMethodNotAllowed())
 	})
 
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		response.WriteError(w, r, response.ErrNotFound())
+	})
+
 	srv := &http.Server{
 		Handler: r,
 		Addr:    ":42069",
