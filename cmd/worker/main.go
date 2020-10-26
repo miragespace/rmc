@@ -87,18 +87,22 @@ func main() {
 		)
 	}
 	defer amqpBroker.Close()
+
 	producer, err := amqpBroker.Producer()
 	if err != nil {
 		logger.Fatal("Cannot setup broker as producer",
 			zap.Error(err),
 		)
 	}
+	defer producer.Close()
+
 	consumer, err := amqpBroker.Consumer()
 	if err != nil {
 		logger.Fatal("Cannot setup broker as consumer",
 			zap.Error(err),
 		)
 	}
+	defer consumer.Close()
 
 	dockerCli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {

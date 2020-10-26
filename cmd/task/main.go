@@ -97,12 +97,6 @@ func main() {
 		)
 	}
 	defer amqpBroker.Close()
-	consumer, err := amqpBroker.Consumer()
-	if err != nil {
-		logger.Fatal("Cannot setup broker as consumer",
-			zap.Error(err),
-		)
-	}
 
 	instanceManager, err := instance.NewManager(logger, db)
 	if err != nil {
@@ -118,11 +112,18 @@ func main() {
 		)
 	}
 
+	instanceConsumer, err := amqpBroker.Consumer()
+	if err != nil {
+		logger.Fatal("Cannot setup consumer for instance",
+			zap.Error(err),
+		)
+	}
+	defer instanceConsumer.Close()
+
 	instanceTask, err := instance.NewTask(instance.TaskOptions{
 		InstanceManager: instanceManager,
-		Consumer:        consumer,
+		Consumer:        instanceConsumer,
 		Logger:          logger,
-		Concurrency:     3,
 	})
 	if err != nil {
 		logger.Fatal("Cannot get instance task",
@@ -130,11 +131,18 @@ func main() {
 		)
 	}
 
+	hostConsumer, err := amqpBroker.Consumer()
+	if err != nil {
+		logger.Fatal("Cannot setup consumer for host",
+			zap.Error(err),
+		)
+	}
+	defer hostConsumer.Close()
+
 	hostTask, err := host.NewTask(host.TaskOptions{
 		HostManager: hostManager,
-		Consumer:    consumer,
+		Consumer:    hostConsumer,
 		Logger:      logger,
-		Concurrency: 3,
 	})
 	if err != nil {
 		logger.Fatal("Cannot get host task",

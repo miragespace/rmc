@@ -2,7 +2,6 @@ package broker
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
@@ -42,45 +41,37 @@ func NewAMQPBroker(amqpURI string) (*AMQPBroker, error) {
 
 // Producer will establish a channel to broker and returns a Producer
 func (a *AMQPBroker) Producer() (broker.Producer, error) {
-	var err error
-	a.producerChannel, err = a.connection.Channel()
+	producerChannel, err := a.connection.Channel()
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot create producer channel")
 	}
-	if err := a.setupExchanges(); err != nil {
+	if err := a.setupExchanges(producerChannel); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot declare as Producer")
 	}
-	return a, nil
+	return &AMQPBroker{
+		producerChannel: producerChannel,
+	}, nil
 }
 
 // Consumer will establish a channel to broker and returns a Consumer
 func (a *AMQPBroker) Consumer() (broker.Consumer, error) {
-	var err error
-	a.consumerChannel, err = a.connection.Channel()
+	consumerChannel, err := a.connection.Channel()
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot create consumer channel")
 	}
-	if err := a.setupExchanges(); err != nil {
+	if err := a.setupExchanges(consumerChannel); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot declare as Consumer")
 	}
-	return a, nil
+	return &AMQPBroker{
+		consumerChannel: consumerChannel,
+	}, nil
 }
 
-func (a *AMQPBroker) setupExchanges() error {
+func (a *AMQPBroker) setupExchanges(channel *amqp.Channel) error {
 	exchanges := []string{
 		instanceControlExchange,
 		instanceProvisionExchange,
 		hostHeartbeatExchange,
-	}
-	var channel *amqp.Channel
-	if a.producerChannel != nil {
-		channel = a.producerChannel
-	}
-	if a.consumerChannel != nil {
-		channel = a.consumerChannel
-	}
-	if channel == nil {
-		return fmt.Errorf("No open channel to setup exchanges")
 	}
 	for _, exchange := range exchanges {
 		if err := channel.ExchangeDeclare(
@@ -106,7 +97,9 @@ func (a *AMQPBroker) Close() {
 	if a.consumerChannel != nil {
 		a.consumerChannel.Close()
 	}
-	a.connection.Close()
+	if a.connection != nil {
+		a.connection.Close()
+	}
 }
 
 func (a *AMQPBroker) publishViaRoutingKey(exchange, routingKey string, body []byte) error {
@@ -166,6 +159,18 @@ func (a *AMQPBroker) SendProvisionReply(p *protocol.ProvisionReply) error {
 	}
 	if err := a.publishViaRoutingKey(instanceProvisionExchange, hostReplyRoutingKey, protoBytes); err != nil {
 		return extErrors.Wrap(err, "Cannot publish provision reply")
+	}
+	return nil
+}
+
+// SendHeartbeat signals the host is alive along with host metadata
+func (a *AMQPBroker) SendHeartbeat(b *protocol.Heartbeat) error {
+	protoBytes, err := proto.Marshal(b)
+	if err != nil {
+		return extErrors.Wrap(err, "Cannot encode message into bytes")
+	}
+	if err := a.publishViaRoutingKey(hostHeartbeatExchange, "heartbeat", protoBytes); err != nil {
+		return extErrors.Wrap(err, "Cannot publish heartbeats")
 	}
 	return nil
 }
@@ -308,18 +313,6 @@ func (a *AMQPBroker) ReceiveProvisionReply(ctx context.Context) (<-chan *protoco
 		}
 	}()
 	return rChan, nil
-}
-
-// SendHeartbeat signals the host is alive along with host metadata
-func (a *AMQPBroker) SendHeartbeat(b *protocol.Heartbeat) error {
-	protoBytes, err := proto.Marshal(b)
-	if err != nil {
-		return extErrors.Wrap(err, "Cannot encode message into bytes")
-	}
-	if err := a.publishViaRoutingKey(hostHeartbeatExchange, "heartbeat", protoBytes); err != nil {
-		return extErrors.Wrap(err, "Cannot publish heartbeats")
-	}
-	return nil
 }
 
 // ReceiveHeartbeat will consumer heartbeats from hosts
