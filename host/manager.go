@@ -2,6 +2,7 @@ package host
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -122,5 +123,7 @@ func (m *Manager) ProcessHeartbeat(ctx context.Context, p *protocol.Heartbeat) e
 			return saveRes.Error
 		}
 		return lookupRes.Error
+	}, &sql.TxOptions{
+		Isolation: sql.LevelSerializable,
 	})
 }

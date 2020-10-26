@@ -2,6 +2,7 @@ package instance
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 
 	extErrors "github.com/pkg/errors"
@@ -132,6 +133,8 @@ func (m *Manager) LambdaUpdate(ctx context.Context, id string, lambda LambdaUpda
 			return nil
 		}
 		return lookupRes.Error
+	}, &sql.TxOptions{
+		Isolation: sql.LevelSerializable,
 	})
 	if err != nil {
 		// transaction failed, return nil new state
