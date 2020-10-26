@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"time"
 
 	extErrors "github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -17,9 +19,19 @@ type Manager struct {
 	logger *zap.Logger
 }
 
+func historyWithLimit(limit int) func(*gorm.DB) *gorm.DB {
+	return func(s *gorm.DB) *gorm.DB {
+		baseQuery := s.Order("histories.when desc")
+		if limit > 0 {
+			baseQuery = baseQuery.Limit(limit)
+		}
+		return baseQuery
+	}
+}
+
 // NewManager returns a new Manager for instances
 func NewManager(logger *zap.Logger, db *gorm.DB) (*Manager, error) {
-	if err := db.AutoMigrate(&Instance{}); err != nil {
+	if err := db.AutoMigrate(&Instance{}, &History{}); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot initilize instance.Manager")
 	}
 	return &Manager{
@@ -40,12 +52,28 @@ func (m *Manager) Create(ctx context.Context, inst *Instance) error {
 	return nil
 }
 
-// GetByID will attempt to lookup and return an Instance record by Instance ID
-func (m *Manager) GetByID(ctx context.Context, id string) (*Instance, error) {
+// GetOption is used when querying for a single Instance record
+type GetOption struct {
+	InstanceID     string
+	SubscriptionID string
+	WithHistory    bool
+}
+
+// Get will attempt to lookup and return an Instance record as specified in GetOption
+func (m *Manager) Get(ctx context.Context, opt GetOption) (*Instance, error) {
+	baseQuery := m.db.WithContext(ctx)
+	if len(opt.InstanceID) > 0 {
+		baseQuery = baseQuery.Where("id = ?", opt.InstanceID)
+	} else if len(opt.SubscriptionID) > 0 {
+		baseQuery = baseQuery.Where("subscription_id = ?", opt.SubscriptionID)
+	} else {
+		return nil, fmt.Errorf("Either GetOption.InstanceID or GetOption.SubscriptionID is required")
+	}
+	if opt.WithHistory {
+		baseQuery = baseQuery.Preload("Histories", historyWithLimit(5))
+	}
 	inst := Instance{}
-
-	result := m.db.WithContext(ctx).Where("id = ?", id).First(&inst)
-
+	result := baseQuery.First(&inst)
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -55,26 +83,6 @@ func (m *Manager) GetByID(ctx context.Context, id string) (*Instance, error) {
 			zap.Error(result.Error),
 		)
 		return nil, extErrors.Wrap(result.Error, "Cannot get instance by id")
-	}
-
-	return &inst, nil
-}
-
-// GetBySubscriptionID will attempt to lookup and return an Instance record by Subscription ID
-func (m *Manager) GetBySubscriptionID(ctx context.Context, sid string) (*Instance, error) {
-	inst := Instance{}
-
-	result := m.db.WithContext(ctx).Where("subscription_id = ?", sid).First(&inst)
-
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
-
-	if result.Error != nil {
-		m.logger.Error("Database returned error",
-			zap.Error(result.Error),
-		)
-		return nil, extErrors.Wrap(result.Error, "Cannot get instance by subscription id")
 	}
 
 	return &inst, nil
@@ -93,14 +101,38 @@ func (m *Manager) Update(ctx context.Context, inst *Instance) error {
 	return nil
 }
 
-// List will return all Instance records by Customer ID. If all == true, it will also return Status == Terminated
-func (m *Manager) List(ctx context.Context, cid string, all bool) ([]Instance, error) {
-	results := make([]Instance, 0, 1)
+// ListOption is used when querying for a list of Instance records
+type ListOption struct {
+	CustomerID        string
+	SubscriptionID    string
+	IncludeTerminated bool
+	Before            time.Time
+	Limit             int
+}
+
+// List will return all Instance records as specified in ListOption
+func (m *Manager) List(ctx context.Context, opt ListOption) ([]Instance, error) {
 	baseQuery := m.db.WithContext(ctx).Order("created_at desc")
-	if !all {
+	if len(opt.CustomerID) > 0 {
+		baseQuery = baseQuery.Where("customer_id = ?", opt.CustomerID)
+	} else if len(opt.SubscriptionID) > 0 {
+		baseQuery = baseQuery.Where("subscription_id = ?", opt.SubscriptionID)
+	} else {
+		return nil, fmt.Errorf("Either ListOption.CustomerID or ListOption.SubscriptionID is required")
+	}
+	if !opt.IncludeTerminated {
 		baseQuery = baseQuery.Where("status = ?", StatusActive)
 	}
-	result := baseQuery.Find(&results, "customer_id = ?", cid)
+	if opt.Limit > 0 {
+		baseQuery = baseQuery.Limit(opt.Limit)
+	}
+	if !opt.Before.IsZero() {
+		baseQuery = baseQuery.Where("created_at < ?", opt.Before)
+	}
+
+	results := make([]Instance, 0, 1)
+	result := baseQuery.Find(&results)
+
 	if result.Error != nil {
 		m.logger.Error("Database returned error",
 			zap.Error(result.Error),
@@ -133,6 +165,7 @@ func (m *Manager) LambdaUpdate(ctx context.Context, id string, lambda LambdaUpda
 		var current Instance
 		lookupRes := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Preload("Histories", historyWithLimit(2)).
 			First(&current, "id = ?", id)
 		if lookupRes.Error == nil {
 			var desired Instance = current

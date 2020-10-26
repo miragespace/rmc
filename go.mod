@@ -25,6 +25,7 @@ require (
 	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/johnsto/go-passwordless v0.0.0-20200616130417-d7e95aa614c8
 	github.com/joho/godotenv v1.3.0
+	github.com/lithammer/shortuuid/v3 v3.0.4
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.1 // indirect

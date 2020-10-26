@@ -98,7 +98,7 @@ func (t *Task) handleControlReply(ctx context.Context, reply *protocol.ControlRe
 			desired.State = StateUnknown
 		}
 
-		// save current state as previous state
+		// trigger history insertion
 		desired.PreviousState = current.State
 		shouldSave = true
 		return
@@ -178,7 +178,7 @@ func (t *Task) handleProvisionReply(ctx context.Context, reply *protocol.Provisi
 			desired.State = StateUnknown
 		}
 
-		// save current state as previous state
+		// trigger history insertion
 		desired.PreviousState = current.State
 		shouldSave = true
 		return

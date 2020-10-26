@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/zllovesuki/rmc/auth"
 	"github.com/zllovesuki/rmc/host"
 	resp "github.com/zllovesuki/rmc/response"
@@ -14,7 +15,6 @@ import (
 	"github.com/zllovesuki/rmc/subscription"
 
 	"github.com/go-chi/chi"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -56,15 +56,20 @@ func NewService(option ServiceOptions) (*Service, error) {
 
 func (s *Service) getInstance(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	instanceID := chi.URLParam(r, "id")
 	claims := ctx.Value(auth.Context).(*auth.Claims)
+	instanceID := chi.URLParam(r, "id")
+	history := r.URL.Query().Get("history") != ""
 
 	logger := s.Logger.With(
 		zap.String("CustomerID", claims.ID),
 		zap.String("InstanceID", instanceID),
 	)
 
-	inst, err := s.InstanceManager.GetByID(ctx, instanceID)
+	opt := GetOption{
+		InstanceID:  instanceID,
+		WithHistory: history,
+	}
+	inst, err := s.InstanceManager.Get(ctx, opt)
 	if err != nil {
 		logger.Error("Unable to query instance",
 			zap.Error(err),
@@ -85,12 +90,29 @@ func (s *Service) listInstances(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	claims := ctx.Value(auth.Context).(*auth.Claims)
 	all := r.URL.Query().Get("all") != ""
+	before := r.URL.Query().Get("before")
+
+	var parsedTime time.Time
+	if before != "" {
+		var err error
+		parsedTime, err = time.Parse(time.RFC3339Nano, before)
+		if err != nil {
+			resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Invalid before param"))
+			return
+		}
+	}
 
 	logger := s.Logger.With(
 		zap.String("CustomerID", claims.ID),
 	)
 
-	results, err := s.InstanceManager.List(ctx, claims.ID, all)
+	opt := ListOption{
+		CustomerID:        claims.ID,
+		IncludeTerminated: all,
+		Before:            parsedTime,
+		Limit:             10,
+	}
+	results, err := s.InstanceManager.List(ctx, opt)
 	if err != nil {
 		logger.Error("Unable to list instances by customer id",
 			zap.Error(err),
@@ -148,6 +170,7 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// trigger history insertion
 		desired.PreviousState = current.State
 		desired.State = nextState
 		shouldSave = true
@@ -221,6 +244,7 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// trigger history insertion
 		desired.PreviousState = current.State
 		desired.State = StateRemoving
 		shouldSave = true
@@ -307,7 +331,11 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 	logger = logger.With(zap.String("SubscriptionID", req.SubscriptionID))
 
 	// make sure user is not double dipping
-	existingInst, err := s.InstanceManager.GetBySubscriptionID(ctx, req.SubscriptionID)
+	opt := GetOption{
+		SubscriptionID: req.SubscriptionID,
+		WithHistory:    false,
+	}
+	existingInst, err := s.InstanceManager.Get(ctx, opt)
 	if err != nil {
 		logger.Error("Unable to verify duplicate subscription existence",
 			zap.Error(err),
@@ -317,15 +345,6 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	if existingInst != nil {
 		resp.WriteError(w, r, resp.ErrConflict().AddMessages("Duplicate subscription found"))
-		return
-	}
-
-	uuid, err := uuid.NewRandom()
-	if err != nil {
-		logger.Error("Unable to get a random UUID",
-			zap.Error(err),
-		)
-		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance"))
 		return
 	}
 
@@ -347,7 +366,7 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 	logger = logger.With(zap.String("HostName", host.Name))
 
 	inst := Instance{
-		ID:             uuid.String(),
+		ID:             uuid.New().String(),
 		CustomerID:     claims.ID,
 		SubscriptionID: req.SubscriptionID,
 		HostName:       host.Name,
@@ -356,7 +375,6 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		PreviousState:  StateUnknown,
 		State:          StateProvisioning,
 		Status:         StatusActive,
-		CreatedAt:      time.Now(),
 	}
 
 	// even if the user tries to race condition newInstance, uniqueIndex on SubscriptionID should prevent it

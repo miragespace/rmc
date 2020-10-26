@@ -3,8 +3,7 @@ package instance
 import (
 	"time"
 
-	"github.com/zllovesuki/rmc/usage"
-
+	"github.com/lithammer/shortuuid/v3"
 	"gorm.io/gorm"
 )
 
@@ -18,37 +17,30 @@ type Instance struct {
 	ServerPort     uint32    `json:"serverPort"`                                 // Minecraft server port
 	ServerVersion  string    `json:"serverVersion"`                              // Minecraft server version
 	IsJavaEdition  bool      `json:"isJavaEdition"`                              // Minecraft server edition (Java/Bedrock)
-	PreviousState  string    `json:"previousState"`                              // See const.go for the list of valid states. This allows for easy error tracking when State is Error
+	PreviousState  string    `json:"previousState"`                              // See const.go for the list of valid states
 	State          string    `json:"state"`                                      // See const.go for the list of valid states
 	Status         string    `json:"status"`                                     // Active/Terminated
-	CreatedAt      time.Time `json:"createdAt"`
+	CreatedAt      time.Time `json:"createdAt" gorm:"autoCreateTime`             // When the instance was created
+	Histories      []History `json:"histories"`                                  // State changes throughout instance' life
 }
 
-// AfterUpdate will insert an usage report after a control operation was successful using gorm Hooks (https://gorm.io/docs/hooks.html)
-func (i *Instance) AfterUpdate(tx *gorm.DB) error {
-	var record *usage.Usage
-	switch i.State {
-	case StateRunning:
-		if i.PreviousState == StateStarting || i.PreviousState == StateProvisioning {
-			record = &usage.Usage{
-				InstanceID: i.ID,
-				Action:     usage.Start,
-				When:       time.Now(),
-			}
-		}
-	case StateStopped:
-		if i.PreviousState == StateStopping {
-			record = &usage.Usage{
-				InstanceID: i.ID,
-				Action:     usage.Stop,
-				When:       time.Now(),
-			}
-		}
+// History describes when an instance's state was changed
+type History struct {
+	ID         string    `json:"-" gorm:"primaryKey"`                                            // ShortUUID of the history record
+	InstanceID string    `json:"-" gorm:"not null;index:idx_histories_accounting"`               // FK to Instance.ID
+	State      string    `json:"state" gorm:"not null"`                                          // State when the Instance.State was changed
+	When       time.Time `json:"when" gorm:"autoCreateTime;not null"`                            // Timestamp when the Instance.State was changed
+	Accounted  bool      `json:"-" gorm:"not null;default:false;index:idx_histories_accounting"` // Used for accounting purpose. True if the usage was accounted for and submitted for billing
+}
+
+// AfterSave will insert a history when State changes (https://gorm.io/docs/hooks.html)
+func (i *Instance) AfterSave(tx *gorm.DB) error {
+	if i.PreviousState != i.State {
+		return tx.Create(&History{
+			ID:         shortuuid.New(),
+			InstanceID: i.ID,
+			State:      i.State,
+		}).Error
 	}
-	if record == nil {
-		return nil
-	}
-	// TODO: Figure out how to do usage correctly
 	return nil
-	// return tx.Create(record).Error
 }
