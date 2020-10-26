@@ -15,7 +15,6 @@ type TaskOptions struct {
 	InstanceManager *Manager
 	Consumer        broker.Consumer
 	Logger          *zap.Logger
-	Concurrency     int
 }
 
 type Task struct {
@@ -32,9 +31,6 @@ func NewTask(option TaskOptions) (*Task, error) {
 	if option.Logger == nil {
 		return nil, fmt.Errorf("nil Logger is invalid")
 	}
-	if option.Concurrency < 1 {
-		return nil, fmt.Errorf("invalid Concurrency")
-	}
 	return &Task{
 		TaskOptions: option,
 	}, nil
@@ -46,6 +42,10 @@ func (t *Task) handleControlReply(ctx context.Context, cChan <-chan *protocol.Co
 		case <-ctx.Done():
 			return
 		case reply := <-cChan:
+			if reply == nil {
+				t.Logger.Error("Received nil protocol.ControlReply when processing control reply")
+				continue
+			}
 			if reply.GetInstance() == nil {
 				t.Logger.Error("Received nil protocol.Instance when processing control reply")
 				continue
@@ -69,7 +69,6 @@ func (t *Task) handleControlReply(ctx context.Context, cChan <-chan *protocol.Co
 				// save current state as previous state
 				desired.PreviousState = current.State
 
-				// mediation
 				switch reply.GetRequestAction() {
 				case protocol.ControlRequest_START:
 					switch reply.GetResult() {
@@ -116,12 +115,16 @@ func (t *Task) handleProvisionReply(ctx context.Context, pChan <-chan *protocol.
 		case <-ctx.Done():
 			return
 		case reply := <-pChan:
+			if reply == nil {
+				t.Logger.Error("Received nil protocol.ProvisionReply when processing provision reply")
+				continue
+			}
 			if reply.GetInstance() == nil {
-				t.Logger.Error("Received nil protocol.Instance when processing control reply")
+				t.Logger.Error("Received nil protocol.Instance when processing provision reply")
 				continue
 			}
 			if reply.GetInstance().GetInstanceID() == "" {
-				t.Logger.Error("Received empty InstanceID when processing control reply")
+				t.Logger.Error("Received empty InstanceID when processing provision reply")
 				continue
 			}
 
@@ -139,7 +142,6 @@ func (t *Task) handleProvisionReply(ctx context.Context, pChan <-chan *protocol.
 				// save current state as previous state
 				desired.PreviousState = current.State
 
-				// mediation
 				switch reply.GetRequestAction() {
 				case protocol.ProvisionRequest_CREATE:
 					switch reply.GetResult() {
@@ -184,17 +186,15 @@ func (t *Task) handleProvisionReply(ctx context.Context, pChan <-chan *protocol.
 }
 
 func (t *Task) HandleReply(ctx context.Context) error {
-	for i := 0; i < t.Concurrency; i++ {
-		cChan, err := t.Consumer.ReceiveControlReply(ctx)
-		if err != nil {
-			return extErrors.Wrap(err, "Cannot get control reply channel")
-		}
-		pChan, err := t.Consumer.ReceiveProvisionReply(ctx)
-		if err != nil {
-			return extErrors.Wrap(err, "Cannot get provision reply channel")
-		}
-		go t.handleControlReply(ctx, cChan)
-		go t.handleProvisionReply(ctx, pChan)
+	cChan, err := t.Consumer.ReceiveControlReply(ctx)
+	if err != nil {
+		return extErrors.Wrap(err, "Cannot get control reply channel")
 	}
+	pChan, err := t.Consumer.ReceiveProvisionReply(ctx)
+	if err != nil {
+		return extErrors.Wrap(err, "Cannot get provision reply channel")
+	}
+	go t.handleControlReply(ctx, cChan)
+	go t.handleProvisionReply(ctx, pChan)
 	return nil
 }
