@@ -2,7 +2,10 @@ package broker
 
 import (
 	"context"
+	"strconv"
+	"time"
 
+	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
 
@@ -18,7 +21,11 @@ const (
 	instanceControlExchange   string = "host_control_exchange"
 	instanceProvisionExchange        = "host_provision_exchange"
 	hostReplyRoutingKey              = "request_reply"
-	hostHeartbeatExchange            = "heartbeat"
+	hostHeartbeatExchange            = "heartbeat_exchange"
+)
+
+var (
+	heartbeatTTL = strconv.FormatInt(int64(spec.HeartbeatInterval/time.Millisecond), 10)
 )
 
 // AMQPBroker describes a message broker via RabbitMQ
@@ -109,6 +116,22 @@ func (a *AMQPBroker) publishViaRoutingKey(exchange, routingKey string, body []by
 		false,
 		false,
 		amqp.Publishing{
+			Timestamp:   time.Now(),
+			ContentType: "application/x-protobuf",
+			Body:        body,
+		},
+	)
+}
+
+func (a *AMQPBroker) publishViaRoutingKeyTTL(exchange, routingKey, ttlMs string, body []byte) error {
+	return a.producerChannel.Publish(
+		exchange,
+		routingKey,
+		false,
+		false,
+		amqp.Publishing{
+			Expiration:  ttlMs,
+			Timestamp:   time.Now(),
 			ContentType: "application/x-protobuf",
 			Body:        body,
 		},
@@ -169,7 +192,7 @@ func (a *AMQPBroker) SendHeartbeat(b *protocol.Heartbeat) error {
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot encode message into bytes")
 	}
-	if err := a.publishViaRoutingKey(hostHeartbeatExchange, "heartbeat", protoBytes); err != nil {
+	if err := a.publishViaRoutingKeyTTL(hostHeartbeatExchange, "heartbeat", heartbeatTTL, protoBytes); err != nil {
 		return extErrors.Wrap(err, "Cannot publish heartbeats")
 	}
 	return nil
