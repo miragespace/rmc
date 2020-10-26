@@ -110,45 +110,52 @@ func (m *Manager) List(ctx context.Context, cid string, all bool) ([]Instance, e
 	return results, nil
 }
 
-// LambdaUpdateFunc is used when transaction is required for update. Return value determines if InstanceManager should commit the changes.
-// Note that current and desired may be nil if no Instance with given id was found, and must return false if that is the case
-type LambdaUpdateFunc func(current *Instance, desired *Instance) (shouldSave bool)
+// LambdaUpdateFunc is used when transaction is required for update. shouldSave determines if InstanceManager should commit the changes.
+// Note that current and desired may be nil if no Instance with given id was found, and must return false if that is the case.
+// returnValue is for the function to return useful information after the lambda has been executed. Caller should check the value of LambdaResult.ReturnValue
+// for additional context and handling.
+// Note that the transaction may be retried multiple times, therefore the lambda function should not introduce side effects.
+type LambdaUpdateFunc func(current *Instance, desired *Instance) (shouldSave bool, returnValue interface{})
 
-// LambdaUpdate will perform a transactional update based on the lambda function. If the lambda signals shouldSave AND update was successful, it will return the new state.
+// LambdaResult contains the result of lambda execution. Instance will only be populated if lambda signals shouldSave AND update was successful,
+// LambdaResult.ReturnValue will contain the return value from the lambda function
+type LambdaResult struct {
+	Instance    *Instance
+	ReturnValue interface{}
+	TxError     error
+}
+
+// LambdaUpdate will perform a transactional update based on the lambda function.
 // The selected Instance will be locked with FOR UPDATE
-func (m *Manager) LambdaUpdate(ctx context.Context, id string, lambda LambdaUpdateFunc) (*Instance, error) {
-	var desired Instance
-	var shouldReturn bool
+func (m *Manager) LambdaUpdate(ctx context.Context, id string, lambda LambdaUpdateFunc) LambdaResult {
+	var result LambdaResult
 	err := m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current Instance
 		lookupRes := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&current, "id = ?", id)
 		if lookupRes.Error == nil {
-			desired = current
-			if lambda(&current, &desired) {
+			var desired Instance = current
+			shouldSave, returnValue := lambda(&current, &desired)
+			if shouldSave {
 				if saveRes := tx.Save(&desired); saveRes.Error != nil {
 					return saveRes.Error
 				}
-				shouldReturn = true
 			}
+			result.Instance = &desired
+			result.ReturnValue = returnValue
 			return nil
 		} else if errors.Is(lookupRes.Error, gorm.ErrRecordNotFound) {
-			lambda(nil, nil)
+			_, returnValue := lambda(nil, nil)
+			result.Instance = nil
+			result.ReturnValue = returnValue
 			return nil
 		}
 		return lookupRes.Error
 	}, &sql.TxOptions{
 		Isolation: sql.LevelSerializable,
 	})
-	if err != nil {
-		// transaction failed, return nil new state
-		return nil, err
-	}
-	if !shouldReturn {
-		// shouldSave == false, return nil new state
-		return nil, nil
-	}
-	// transaction succeed and shouldSave == true, return new state
-	return &desired, nil
+
+	result.TxError = err
+	return result
 }

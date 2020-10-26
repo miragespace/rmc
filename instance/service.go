@@ -123,11 +123,9 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var action protocol.ControlRequest_ControlAction // side effect in lambda
-
-	lambda := func(current *Instance, desired *Instance) (shouldSave bool) {
+	lambda := func(current *Instance, desired *Instance) (shouldSave bool, respError interface{}) {
 		if current == nil || current.CustomerID != claims.ID || current.Status != StatusActive {
-			resp.WriteError(w, r, resp.ErrNotFound().AddMessages("Cannot find instance with specific ID"))
+			respError = resp.ErrNotFound().AddMessages("Cannot find instance with specific ID")
 			return
 		}
 
@@ -135,20 +133,18 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 		switch req.Action {
 		case "Start":
 			if current.State != StateStopped {
-				resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Instance not in 'Stopped' state"))
+				respError = resp.ErrBadRequest().AddMessages("Instance not in 'Stopped' state")
 				return
 			}
-			action = protocol.ControlRequest_START
 			nextState = StateStarting
 		case "Stop":
 			if current.State != StateRunning {
-				resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Instance not in 'Running' state"))
+				respError = resp.ErrBadRequest().AddMessages("Instance not in 'Running' state")
 				return
 			}
-			action = protocol.ControlRequest_STOP
 			nextState = StateStopping
 		default:
-			resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Unknown action"))
+			respError = resp.ErrBadRequest().AddMessages("Unknown action")
 			return
 		}
 
@@ -158,24 +154,31 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inst, err := s.InstanceManager.LambdaUpdate(ctx, instanceID, lambda)
+	lambdaResult := s.InstanceManager.LambdaUpdate(ctx, instanceID, lambda)
 
-	if err != nil {
+	if lambdaResult.ReturnValue != nil {
+		resp.WriteError(w, r, lambdaResult.ReturnValue.(*resp.Error))
+		return
+	}
+
+	if lambdaResult.TxError != nil {
 		logger.Error("Unable to update instance status",
-			zap.Error(err),
+			zap.Error(lambdaResult.TxError),
 		)
 		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to update Instance status"))
 		return
 	}
 
-	if inst == nil {
-		// response was already sent in lambda
-		return
-	}
-
-	go func() {
+	go func(inst *Instance) {
 		host := host.Host{
 			Name: inst.HostName,
+		}
+		var action protocol.ControlRequest_ControlAction
+		switch inst.State {
+		case StateStopping:
+			action = protocol.ControlRequest_STOP
+		case StateStarting:
+			action = protocol.ControlRequest_START
 		}
 		if err := s.Producer.SendControlRequest(host.Identifier(),
 			&protocol.ControlRequest{
@@ -190,7 +193,7 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 			)
 			// fail through: as long as database state is consistent, manual mediation is possible
 		}
-	}()
+	}(lambdaResult.Instance)
 
 	// background task should handle the usage update, if START/STOP was successful
 
@@ -207,55 +210,57 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		zap.String("InstanceID", instanceID),
 	)
 
-	lambda := func(current *Instance, desired *Instance) (shouldSave bool) {
+	lambda := func(current *Instance, desired *Instance) (shouldSave bool, respError interface{}) {
 		if current == nil || current.CustomerID != claims.ID || current.Status != StatusActive {
-			resp.WriteError(w, r, resp.ErrNotFound().AddMessages("Cannot find instance with specific ID"))
+			respError = resp.ErrNotFound().AddMessages("Cannot find instance with specific ID")
 			return
 		}
 
 		if current.State != StateStopped {
-			resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Instance not in 'Stopped' state"))
+			respError = resp.ErrBadRequest().AddMessages("Instance not in 'Stopped' state")
 			return
 		}
 
 		desired.PreviousState = current.State
 		desired.State = StateRemoving
-		desired.Status = StatusTerminated
 		shouldSave = true
 		return
 	}
 
-	inst, err := s.InstanceManager.LambdaUpdate(ctx, instanceID, lambda)
-	if err != nil {
+	lambdaResult := s.InstanceManager.LambdaUpdate(ctx, instanceID, lambda)
+
+	if lambdaResult.ReturnValue != nil {
+		resp.WriteError(w, r, lambdaResult.ReturnValue.(*resp.Error))
+		return
+	}
+
+	if lambdaResult.TxError != nil {
 		logger.Error("Unable to delete instance",
-			zap.Error(err),
+			zap.Error(lambdaResult.TxError),
 		)
 		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to delete Instance"))
 		return
 	}
 
-	if inst == nil {
-		// response was already sent in lambda
-		return
-	}
-
-	go func() {
+	go func(inst *Instance) {
 		host := host.Host{
 			Name: inst.HostName,
 		}
-		if err := s.Producer.SendProvisionRequest(host.Identifier(), &protocol.ProvisionRequest{
-			Instance: &protocol.Instance{
-				InstanceID: inst.ID,
-			},
-			Action: protocol.ProvisionRequest_DELETE,
-		}); err != nil {
+		if err := s.Producer.SendProvisionRequest(
+			host.Identifier(),
+			&protocol.ProvisionRequest{
+				Instance: &protocol.Instance{
+					InstanceID: inst.ID,
+				},
+				Action: protocol.ProvisionRequest_DELETE,
+			}); err != nil {
 			logger.Error("Unable to send DELETE provision request",
 				zap.Error(err),
 				zap.String("HostName", inst.HostName),
 			)
 			// fail through: as long as database state is consistent, manual mediation is possible
 		}
-	}()
+	}(lambdaResult.Instance)
 
 	// background task should handle cancelling subscription, if DELETE was successful
 
