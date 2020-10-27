@@ -40,27 +40,24 @@ func (m *Manager) Create(ctx context.Context, si *SubscriptionItem) error {
 }
 
 type GetOption struct {
-	CustomerID         string
-	SubscriptionID     string
-	SubscriptionItemID string
+	CustomerID     string
+	SubscriptionID string
 }
 
 func (m *Manager) Get(ctx context.Context, opt GetOption) (*Subscription, error) {
 	if len(opt.CustomerID) == 0 {
 		return nil, fmt.Errorf("CustomerID is required")
 	}
-	baseQuery := m.db.WithContext(ctx).Where("customer_id = ?", opt.CustomerID)
-	if len(opt.SubscriptionID) > 0 {
-		baseQuery = baseQuery.Where("subscription_id = ?", opt.SubscriptionID)
-	} else if len(opt.SubscriptionItemID) > 0 {
-		baseQuery = baseQuery.Where("id = ?", opt.SubscriptionItemID)
-	} else {
-		return nil, fmt.Errorf("Either SubscriptionCheck.SubscriptionID or SubscriptionCheck.SubscriptionItemID is required")
+	if len(opt.SubscriptionID) == 0 {
+		return nil, fmt.Errorf("Either SubscriptionCheck.SubscriptionID is required")
 	}
-
 	var item Subscription
+	result := m.db.WithContext(ctx).
+		Preload("SubscriptionItems").
+		Where("customer_id = ?", opt.CustomerID).
+		Where("id = ?", opt.SubscriptionID).
+		First(&item)
 
-	result := baseQuery.Preload("SubscriptionItems").First(&item)
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
