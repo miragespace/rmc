@@ -183,7 +183,12 @@ func main() {
 		)
 	}
 
-	subscriptionManager, err := subscription.NewManager(logger, db, stripeClient)
+	subscriptionManager, err := subscription.NewManager(subscription.SubscriptionManagerOptions{
+		StripeClient:   stripeClient,
+		DB:             db,
+		Logger:         logger,
+		PathToPlanJSON: os.Getenv("PATH_TO_PLAN_JSON"),
+	})
 	if err != nil {
 		logger.Fatal("Cannot initialize SubscriptionManager",
 			zap.Error(err),
@@ -216,7 +221,9 @@ func main() {
 	}
 
 	subscriptionRouter, err := subscription.NewService(subscription.ServiceOptions{
-		Logger: logger,
+		SubscriptionManager: subscriptionManager,
+		StripeClient:        stripeClient,
+		Logger:              logger,
 	})
 	if err != nil {
 		logger.Fatal("Cannot initialize Subscription Service Router",

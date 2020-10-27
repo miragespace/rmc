@@ -149,11 +149,19 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 	resp.WriteResponse(w, r, sub)
 }
 
+func (s *Service) listPlans(w http.ResponseWriter, r *http.Request) {
+	resp.WriteResponse(w, r, s.SubscriptionManager.ListDefinedPlans())
+}
+
 func (s *Service) Router() http.Handler {
 	r := chi.NewRouter()
 
+	r.Get("/plans", s.listPlans)
 	r.Post("/initialSetup", s.setupPayment)
 	r.Post("/", s.setupSubscription)
+
+	// prettyJSON, _ := json.MarshalIndent(d, "", "    ")
+	// fmt.Printf("%s\n", prettyJSON)
 
 	return r
 }
