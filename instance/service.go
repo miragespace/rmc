@@ -315,7 +315,11 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 	// TODO: validate server versions/java or not
 	// TODO: check which plan associated with the subscription
 
-	valid, err := s.SubscriptionManager.ValidSubscription(ctx, claims.ID, req.SubscriptionID)
+	subOpt := subscription.GetOption{
+		CustomerID:     claims.ID,
+		SubscriptionID: req.SubscriptionID,
+	}
+	sub, err := s.SubscriptionManager.Get(ctx, subOpt)
 	if err != nil {
 		logger.Error("Unable to verify subscription validity",
 			zap.Error(err),
@@ -323,8 +327,8 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance"))
 		return
 	}
-	if !valid {
-		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Invalid Subscription"))
+	if sub == nil || !sub.Ready {
+		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Invalid Subscription: non-existent or pending setup"))
 		return
 	}
 

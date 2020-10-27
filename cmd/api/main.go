@@ -183,11 +183,7 @@ func main() {
 		)
 	}
 
-	subscriptionManager, err := subscription.NewManager(subscription.ManagerOptions{
-		Auth:         auth,
-		StripeClient: stripeClient,
-		Logger:       logger,
-	})
+	subscriptionManager, err := subscription.NewManager(logger, db, stripeClient)
 	if err != nil {
 		logger.Fatal("Cannot initialize SubscriptionManager",
 			zap.Error(err),

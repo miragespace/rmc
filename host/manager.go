@@ -85,7 +85,7 @@ func (m *Manager) NextAvailableHost(ctx context.Context) (*Host, error) {
 	return &hosts[0], nil
 }
 
-// List will return all Hosts records by Customer ID.
+// List will return all Hosts records
 func (m *Manager) List(ctx context.Context) ([]Host, error) {
 	results := make([]Host, 0, 1)
 	baseQuery := m.db.WithContext(ctx).Order("last_heartbeat desc")
