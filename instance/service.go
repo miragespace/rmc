@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/zllovesuki/rmc/auth"
 	"github.com/zllovesuki/rmc/host"
 	resp "github.com/zllovesuki/rmc/response"
@@ -15,6 +14,7 @@ import (
 	"github.com/zllovesuki/rmc/subscription"
 
 	"github.com/go-chi/chi"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 

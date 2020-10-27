@@ -20,7 +20,7 @@ type Instance struct {
 	PreviousState  string    `json:"previousState"`                              // See const.go for the list of valid states
 	State          string    `json:"state"`                                      // See const.go for the list of valid states
 	Status         string    `json:"status"`                                     // Active/Terminated
-	CreatedAt      time.Time `json:"createdAt" gorm:"autoCreateTime`             // When the instance was created
+	CreatedAt      time.Time `json:"createdAt" gorm:"autoCreateTime"`            // When the instance was created
 	Histories      []History `json:"histories"`                                  // State changes throughout instance' life
 }
 
