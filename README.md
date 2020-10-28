@@ -6,6 +6,10 @@ This is the side project assignment for USFCA CS 601 Fall 2020.
 
 See the [designs](./designs) folder for how the project was designed.
 
+See the [docs](./docs) folder for documentations.
+
+See the [Spring Boards](https://github.com/zllovesuki/rmc/projects) for current tasks.
+
 ## Tech Stack for the Project
 
 Backend:
