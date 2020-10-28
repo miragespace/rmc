@@ -7,15 +7,17 @@ import (
 	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
+	"github.com/zllovesuki/rmc/subscription"
 
 	extErrors "github.com/pkg/errors"
 	"go.uber.org/zap"
 )
 
 type TaskOptions struct {
-	InstanceManager *Manager
-	Consumer        broker.Consumer
-	Logger          *zap.Logger
+	InstanceManager     *Manager
+	SubscriptionManager *subscription.Manager
+	Consumer            broker.Consumer
+	Logger              *zap.Logger
 }
 
 type Task struct {
@@ -25,6 +27,9 @@ type Task struct {
 func NewTask(option TaskOptions) (*Task, error) {
 	if option.InstanceManager == nil {
 		return nil, fmt.Errorf("nil InstanceManager is invalid")
+	}
+	if option.SubscriptionManager == nil {
+		return nil, fmt.Errorf("nil SubscriptionManager is invalid")
 	}
 	if option.Consumer == nil {
 		return nil, fmt.Errorf("nil Consumer is invalid")
@@ -195,6 +200,15 @@ func (t *Task) handleProvisionReply(ctx context.Context, reply *protocol.Provisi
 		logger.Error("Cannot update instance status",
 			zap.Error(lambdaResult.TxError),
 		)
+	}
+	if lambdaResult.Instance != nil && lambdaResult.Instance.State == StateRemoved {
+		// TODO: report remaining usage for billing
+		if err := t.SubscriptionManager.CancelSubscription(ctx, lambdaResult.Instance.SubscriptionID); err != nil {
+			logger.Error("Unable to cancel subscription",
+				zap.String("SubscriptionID", lambdaResult.Instance.SubscriptionID),
+				zap.Error(err),
+			)
+		}
 	}
 }
 

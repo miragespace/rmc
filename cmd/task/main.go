@@ -11,8 +11,10 @@ import (
 	"github.com/zllovesuki/rmc/auth"
 	"github.com/zllovesuki/rmc/broker"
 	"github.com/zllovesuki/rmc/db"
+	"github.com/zllovesuki/rmc/external"
 	"github.com/zllovesuki/rmc/host"
 	"github.com/zllovesuki/rmc/instance"
+	"github.com/zllovesuki/rmc/subscription"
 
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
@@ -79,6 +81,8 @@ func main() {
 		)
 	}
 
+	stripeClient := external.NewStripeClient(os.Getenv("STRIPE_KEY"))
+
 	// Initialize backend connections
 	db, err := db.New(db.Options{
 		URI:    os.Getenv("POSTGRES_URI"),
@@ -105,6 +109,18 @@ func main() {
 		)
 	}
 
+	subscriptionManager, err := subscription.NewManager(subscription.ManagerOptions{
+		StripeClient:   stripeClient,
+		DB:             db,
+		Logger:         logger,
+		PathToPlanJSON: os.Getenv("PATH_TO_PLAN_JSON"),
+	})
+	if err != nil {
+		logger.Fatal("Cannot initialize SubscriptionManager",
+			zap.Error(err),
+		)
+	}
+
 	hostManager, err := host.NewManager(logger, db)
 	if err != nil {
 		logger.Fatal("Cannot initialize HostManager",
@@ -121,9 +137,10 @@ func main() {
 	defer instanceConsumer.Close()
 
 	instanceTask, err := instance.NewTask(instance.TaskOptions{
-		InstanceManager: instanceManager,
-		Consumer:        instanceConsumer,
-		Logger:          logger,
+		InstanceManager:     instanceManager,
+		SubscriptionManager: subscriptionManager,
+		Consumer:            instanceConsumer,
+		Logger:              logger,
 	})
 	if err != nil {
 		logger.Fatal("Cannot get instance task",

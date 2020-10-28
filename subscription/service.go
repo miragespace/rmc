@@ -11,13 +11,11 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/stripe/stripe-go/v71"
-	"github.com/stripe/stripe-go/v71/client"
 	"go.uber.org/zap"
 )
 
 type ServiceOptions struct {
 	SubscriptionManager *Manager
-	StripeClient        *client.API
 	Logger              *zap.Logger
 }
 
@@ -28,9 +26,6 @@ type Service struct {
 func NewService(option ServiceOptions) (*Service, error) {
 	if option.SubscriptionManager == nil {
 		return nil, fmt.Errorf("nil SubscriptionManager is invalid")
-	}
-	if option.StripeClient == nil {
-		return nil, fmt.Errorf("nil StripeClient is invalid")
 	}
 	if option.Logger == nil {
 		return nil, fmt.Errorf("nil Logger is invalid")
@@ -56,33 +51,23 @@ func (s *Service) setupPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger = logger.With(zap.String("PaymentMethodID", req.PaymentMethodID))
-
-	params := &stripe.PaymentMethodAttachParams{
-		Customer: stripe.String(claims.ID),
-	}
-	pm, err := s.StripeClient.PaymentMethods.Attach(
-		req.PaymentMethodID,
-		params,
-	)
-	if err != nil {
-		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to attach payment").WithResult(err))
+	if len(req.PaymentMethodID) < 10 { // the number "10" here is arbitary
+		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Invalid PaymentMethodID"))
 		return
 	}
 
-	customerParams := &stripe.CustomerParams{
-		InvoiceSettings: &stripe.CustomerInvoiceSettingsParams{
-			DefaultPaymentMethod: stripe.String(pm.ID),
-		},
+	logger = logger.With(zap.String("PaymentMethodID", req.PaymentMethodID))
+
+	opt := AttachPaymentOptions{
+		CustomerID:      claims.ID,
+		PaymentMethodID: req.PaymentMethodID,
 	}
-	if _, err := s.StripeClient.Customers.Update(
-		claims.ID,
-		customerParams,
-	); err != nil {
-		logger.Error("Unable to update payment method in Stripe",
+
+	if err := s.SubscriptionManager.AttachPayment(ctx, opt); err != nil {
+		logger.Error("Unable to attach payment to customer",
 			zap.Error(err),
 		)
-		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup payment"))
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to attach payment").WithResult(err))
 		return
 	}
 
@@ -90,7 +75,7 @@ func (s *Service) setupPayment(w http.ResponseWriter, r *http.Request) {
 }
 
 type SubscriptionSetupRequest struct {
-	planID string `json:"planId"`
+	PlanID string `json:"planId"`
 }
 
 func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
@@ -105,19 +90,19 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plan, ok := s.SubscriptionManager.GetDefinedPlanByID(req.planID)
+	plan, ok := s.SubscriptionManager.GetDefinedPlanByID(req.PlanID)
 	if !ok {
 		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Specified Plan is invalid or has retired"))
 		return
 	}
-	logger = logger.With(zap.String("PlanID", req.planID))
+	logger = logger.With(zap.String("PlanID", req.PlanID))
 
-	subscriptionParams := plan.GetStripeSubscriptionParams(ctx, claims.ID)
+	opt := CreateFromOptionOption{
+		CustomerID: claims.ID,
+		Plan:       plan,
+	}
 
-	subscriptionParams.AddExpand("latest_invoice.payment_intent")
-	subscriptionParams.AddExpand("pending_setup_intent")
-
-	sub, err := s.StripeClient.Subscriptions.New(subscriptionParams)
+	sub, err := s.SubscriptionManager.CreateSubscriptionFromPlan(ctx, opt)
 
 	if err != nil {
 		logger.Error("Unable to setup subscription in Stripe",
@@ -126,8 +111,6 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription", "Payment gateway returns error"))
 		return
 	}
-
-	fmt.Printf("%+v\n", sub)
 
 	var subscription Subscription
 	if err := subscription.FromStripeResponse(sub, plan); err != nil {
@@ -202,9 +185,6 @@ func (s *Service) Router() http.Handler {
 	r.Get("/", s.listSubscriptions)
 	r.Post("/initialSetup", s.setupPayment)
 	r.Post("/", s.setupSubscription)
-
-	// prettyJSON, _ := json.MarshalIndent(d, "", "    ")
-	// fmt.Printf("%s\n", prettyJSON)
 
 	return r
 }

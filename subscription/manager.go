@@ -7,6 +7,7 @@ import (
 	"time"
 
 	extErrors "github.com/pkg/errors"
+	"github.com/stripe/stripe-go/v71"
 	"github.com/stripe/stripe-go/v71/client"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -152,8 +153,109 @@ func (m *Manager) Get(ctx context.Context, opt GetOption) (*Subscription, error)
 	return &sub, nil
 }
 
+type AttachPaymentOptions struct {
+	CustomerID      string
+	PaymentMethodID string
+}
+
+func (m *Manager) AttachPayment(ctx context.Context, opt AttachPaymentOptions) error {
+	if len(opt.CustomerID) == 0 {
+		return fmt.Errorf("AttachPaymentOptions.CustomerID is required")
+	}
+	if len(opt.PaymentMethodID) == 0 {
+		return fmt.Errorf("AttachPaymentOptions.PaymentMethodID is required")
+	}
+	params := &stripe.PaymentMethodAttachParams{
+		Customer: stripe.String(opt.CustomerID),
+	}
+	pm, err := m.StripeClient.PaymentMethods.Attach(
+		opt.PaymentMethodID,
+		params,
+	)
+	if err != nil {
+		return err
+	}
+
+	customerParams := &stripe.CustomerParams{
+		InvoiceSettings: &stripe.CustomerInvoiceSettingsParams{
+			DefaultPaymentMethod: stripe.String(pm.ID),
+		},
+	}
+	if _, err := m.StripeClient.Customers.Update(
+		opt.CustomerID,
+		customerParams,
+	); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type CreateFromOptionOption struct {
+	CustomerID string
+	Plan       Plan
+}
+
+func (m *Manager) CreateSubscriptionFromPlan(ctx context.Context, opt CreateFromOptionOption) (*stripe.Subscription, error) {
+	if len(opt.CustomerID) == 0 {
+		return nil, fmt.Errorf("SetupOptions.CustomerID is required")
+	}
+	if len(opt.Plan.ID) == 0 {
+		return nil, fmt.Errorf("SetupOptions.Plan needs to be a synchronized Plan")
+	}
+
+	subscriptionParams := opt.Plan.GetStripeSubscriptionParams(ctx, opt.CustomerID)
+	subscriptionParams.AddExpand("latest_invoice.payment_intent")
+	subscriptionParams.AddExpand("pending_setup_intent")
+
+	sub, err := m.StripeClient.Subscriptions.New(subscriptionParams)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return sub, nil
+}
+
+func (m *Manager) SynchronizeSubscriptionStatus(ctx context.Context, subscriptionId string) error {
+	subscriptionParams := &stripe.SubscriptionParams{
+		Params: stripe.Params{
+			Context: ctx,
+		},
+	}
+	subscriptionParams.AddExpand("latest_invoice.payment_intent")
+	subscriptionParams.AddExpand("pending_setup_intent")
+	sub, err := m.StripeClient.Subscriptions.Get(subscriptionId, subscriptionParams)
+	if err != nil {
+		return extErrors.Wrap(err, "Unable to fetch from Stripe to synchronize status")
+	}
+	// TODO: also synchronize cancelled/overdue
+	if sub.Status == stripe.SubscriptionStatusActive && sub.PendingSetupIntent == nil {
+		result := m.DB.WithContext(ctx).Model(&Subscription{}).Where("id = ?", subscriptionId).Update("state", StateActive)
+		if result.Error != nil {
+			return extErrors.Wrap(result.Error, "Unable to mark subscription as cancelled in database")
+		}
+	}
+	return nil
+}
+
 func (m *Manager) CancelSubscription(ctx context.Context, subscriptionId string) error {
-	// TODO: report usage
-	// TODO: Stripe API to cancel and collect
+	updateParams := &stripe.SubscriptionParams{
+		Params: stripe.Params{
+			Context: ctx,
+		},
+		CancelAtPeriodEnd: stripe.Bool(true),
+	}
+	sub, err := m.StripeClient.Subscriptions.Update(subscriptionId, updateParams)
+	if err != nil {
+		return extErrors.Wrap(err, "Unable to cancel subscription on Stripe")
+	}
+	if sub.CancelAtPeriodEnd != true {
+		return fmt.Errorf("Stripe did not mark subscription as cancel at end of period")
+	}
+	result := m.DB.WithContext(ctx).Model(&Subscription{}).Where("id = ?", subscriptionId).Update("state", StateInactive)
+	if result.Error != nil {
+		return extErrors.Wrap(result.Error, "Unable to mark subscription as cancelled in database")
+	}
 	return nil
 }

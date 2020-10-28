@@ -222,7 +222,6 @@ func main() {
 
 	subscriptionRouter, err := subscription.NewService(subscription.ServiceOptions{
 		SubscriptionManager: subscriptionManager,
-		StripeClient:        stripeClient,
 		Logger:              logger,
 	})
 	if err != nil {

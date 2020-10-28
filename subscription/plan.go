@@ -74,7 +74,7 @@ const (
 
 // Part describes each Part of a Plan. This corresponds to Stripe's "Price"
 type Part struct {
-	ID            string   `json:"-"`             // Corresponding to Stripe's PriceID
+	ID            string   `json:"id"`            // Corresponding to Stripe's PriceID
 	Name          string   `json:"name"`          // Name to describe this Part
 	AmountInCents float64  `json:"amountInCents"` // Amount in cents (e.g. 15.0 for $0.015/{period})
 	Period        string   `json:"period"`        // How should the AmountInCents apply. If Type is FixedType, then this Part will be billed AmountInCents/month regardless. If Type is Variable, then this Part will be billed Usage * AmountInCents/{period} in a month
@@ -84,7 +84,7 @@ type Part struct {
 
 // Plan describes an Instance plan. This corresponds to Stripe's "Product"
 type Plan struct {
-	ID          string          `json:"-"`           // Corresponds to Stripe's Product ID
+	ID          string          `json:"id"`          // Corresponds to Stripe's Product ID
 	Name        string          `json:"name"`        // Represent the name shown to the customer and on Stripe
 	Description string          `json:"description"` // Shown to the customer
 	Currency    string          `json:"currency"`    // The ISO currency code (e.g. usd)

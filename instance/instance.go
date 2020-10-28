@@ -3,8 +3,9 @@ package instance
 import (
 	"time"
 
-	"github.com/lithammer/shortuuid/v3"
 	"github.com/zllovesuki/rmc/spec"
+
+	"github.com/lithammer/shortuuid/v3"
 	"gorm.io/gorm"
 )
 
