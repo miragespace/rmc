@@ -1,2 +1,4 @@
 .env.production
+cmd/rnd
 bin/
+.DS_Store

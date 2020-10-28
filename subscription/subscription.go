@@ -22,22 +22,22 @@ const (
 // Subscription is a local copy of a Stripe Subscription, with all the relations established
 type Subscription struct {
 	ID                string             `json:"id" gorm:"primaryKey"`
-	PlanID            string             `json:"planId"`                  // Corresponds to Stripe's Product ID and Plan.ID
-	CustomerID        string             `json:"customerId" gorm:"index"` // Corresponds to Stripe's Customer ID and Customer.ID
-	State             State              `json:"state"`                   // Corresponds to Stripe's subscription.setup_intent.status. StateActive if status == 'succeeded'
+	PlanID            string             `json:"planId" gorm:"not null"`           // Corresponds to Stripe's Product ID and Plan.ID
+	CustomerID        string             `json:"customerId" gorm:"index;not null"` // Corresponds to Stripe's Customer ID and Customer.ID
+	State             State              `json:"state"`                            // Corresponds to Stripe's subscription.setup_intent.status. StateActive if status == 'succeeded'
 	SubscriptionItems []SubscriptionItem `json:"subscriptionItems"`
 	CreatedAt         time.Time          `json:"createdAt" gorm:"autoCreateTime"`
 }
 
 // SubscriptionItem is a local copy of a Stripe Subscription Item under a Subscription
 type SubscriptionItem struct {
-	ID             string     `json:"id" gorm:"primaryKey"`        // Corresponds to Stripe's Subscription Item ID
-	PartID         string     `json:"partId"`                      // Corrsponds to Stripe's Price ID and Plan.[]Part.ID
-	SubscriptionID string     `json:"subscriptionId" gorm:"index"` // Corresponds to the parent subscription ID that this item belongs to
-	RunningUsage   int64      `json:"runningUsage"`                // Used for accounting purposes. This is the variable usage part of the subscription item. Round up to the nearest unit when reporting for usage
-	PeriodStart    time.Time  `json:"periodStart"`                 // Used for accounting purposes, this signals when the RunningUsage stars
-	PeriodEnd      time.Time  `json:"periodEnd"`                   // Used for accounting purposes, this signals when the RunningUsage end
-	LastReportedAt *time.Time `json:"lastReportedAt"`              // Used for accounting purposes. This is when the the usage was last reported, if applicable
+	ID             string     `json:"id" gorm:"primaryKey"`                 // Corresponds to Stripe's Subscription Item ID
+	PartID         string     `json:"partId" gorm:"not null"`               // Corrsponds to Stripe's Price ID and Plan.[]Part.ID
+	SubscriptionID string     `json:"subscriptionId" gorm:"index;not null"` // Corresponds to the parent subscription ID that this item belongs to
+	RunningUsage   int64      `json:"runningUsage"`                         // Used for accounting purposes. This is the variable usage part of the subscription item. Round up to the nearest unit when reporting for usage
+	PeriodStart    time.Time  `json:"periodStart"`                          // Used for accounting purposes, this signals when the RunningUsage stars
+	PeriodEnd      time.Time  `json:"periodEnd"`                            // Used for accounting purposes, this signals when the RunningUsage end
+	LastReportedAt *time.Time `json:"lastReportedAt"`                       // Used for accounting purposes. This is when the the usage was last reported, if applicable
 }
 
 // FromStripeResponse will construct a local copy of Subscription from Stripe's response of subscription object
