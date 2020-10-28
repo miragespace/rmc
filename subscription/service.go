@@ -97,7 +97,7 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 	}
 	logger = logger.With(zap.String("PlanID", req.PlanID))
 
-	opt := CreateFromOptionOption{
+	opt := CreateFromPlanOption{
 		CustomerID: claims.ID,
 		Plan:       plan,
 	}

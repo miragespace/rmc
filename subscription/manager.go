@@ -191,12 +191,12 @@ func (m *Manager) AttachPayment(ctx context.Context, opt AttachPaymentOptions) e
 	return nil
 }
 
-type CreateFromOptionOption struct {
+type CreateFromPlanOption struct {
 	CustomerID string
 	Plan       Plan
 }
 
-func (m *Manager) CreateSubscriptionFromPlan(ctx context.Context, opt CreateFromOptionOption) (*stripe.Subscription, error) {
+func (m *Manager) CreateSubscriptionFromPlan(ctx context.Context, opt CreateFromPlanOption) (*stripe.Subscription, error) {
 	if len(opt.CustomerID) == 0 {
 		return nil, fmt.Errorf("SetupOptions.CustomerID is required")
 	}

@@ -16,6 +16,37 @@ import (
 	"github.com/stripe/stripe-go/v71/client"
 )
 
+// PartType is the custom type to identify what's the Type of this Part in the Plan
+type PartType string
+
+// Defining constants
+const (
+	FixedType    PartType = "Fixed"
+	VariableType PartType = "Variable"
+)
+
+// Part describes each Part of a Plan. This corresponds to Stripe's "Price"
+type Part struct {
+	ID            string   `json:"id"`            // Corresponding to Stripe's PriceID
+	Name          string   `json:"name"`          // Name to describe this Part
+	AmountInCents float64  `json:"amountInCents"` // Amount in cents (e.g. 15.0 for $0.015/{period})
+	Period        string   `json:"period"`        // How should the AmountInCents apply. If Type is FixedType, then this Part will be billed AmountInCents/month regardless. If Type is Variable, then this Part will be billed Usage * AmountInCents/{period} in a month
+	Type          PartType `json:"type"`          // Either FixedType or VariableType
+	Primary       bool     `json:"primary"`       // Indicate if this Part is the Primary part (e.g. Instance, not Addon) or not
+}
+
+// Plan describes an Instance plan. This corresponds to Stripe's "Product"
+type Plan struct {
+	ID          string          `json:"id"`          // Corresponds to Stripe's Product ID
+	Name        string          `json:"name"`        // Represent the name shown to the customer and on Stripe
+	Description string          `json:"description"` // Shown to the customer
+	Currency    string          `json:"currency"`    // The ISO currency code (e.g. usd)
+	Interval    string          `json:"interval"`    // Billing Frequency (e.g. month)
+	Parts       []Part          `json:"parts"`       // See Part struct above
+	Parameters  spec.Parameters `json:"parameters"`  // Describes what this Plan will have (e.g. {Ram: 2GB, Players: 6})
+	Retired     bool            `json:"retired"`     // Flag if the Plan is no longer valid (Archived on Stripe)
+}
+
 // loadPlansFromFile will read from the plan JSON file to define what plans are availble for purchase.
 // ID fields will be populated via EnsureExistence().
 // Note, if you change any of these:
@@ -62,37 +93,6 @@ func loadPlansFromFile(filename string) ([]Plan, error) {
 // When reporting usage, we will report the Variable part with Subscription.RunningTotalMinutes/60, rounded *up* to the nearest hour
 
 var lookupKeyRegex = regexp.MustCompile("[^a-zA-Z0-9]+")
-
-// PartType is the custom type to identify what's the Type of this Part in the Plan
-type PartType string
-
-// Defining constants
-const (
-	FixedType    PartType = "Fixed"
-	VariableType PartType = "Variable"
-)
-
-// Part describes each Part of a Plan. This corresponds to Stripe's "Price"
-type Part struct {
-	ID            string   `json:"id"`            // Corresponding to Stripe's PriceID
-	Name          string   `json:"name"`          // Name to describe this Part
-	AmountInCents float64  `json:"amountInCents"` // Amount in cents (e.g. 15.0 for $0.015/{period})
-	Period        string   `json:"period"`        // How should the AmountInCents apply. If Type is FixedType, then this Part will be billed AmountInCents/month regardless. If Type is Variable, then this Part will be billed Usage * AmountInCents/{period} in a month
-	Type          PartType `json:"type"`          // Either FixedType or VariableType
-	Primary       bool     `json:"primary"`       // Indicate if this Part is the Primary part (e.g. Instance, not Addon) or not
-}
-
-// Plan describes an Instance plan. This corresponds to Stripe's "Product"
-type Plan struct {
-	ID          string          `json:"id"`          // Corresponds to Stripe's Product ID
-	Name        string          `json:"name"`        // Represent the name shown to the customer and on Stripe
-	Description string          `json:"description"` // Shown to the customer
-	Currency    string          `json:"currency"`    // The ISO currency code (e.g. usd)
-	Interval    string          `json:"interval"`    // Billing Frequency (e.g. month)
-	Parts       []Part          `json:"parts"`       // See Part struct above
-	Parameters  spec.Parameters `json:"parameters"`  // Describes what this Plan will have (e.g. {Ram: 2GB, Players: 6})
-	Retired     bool            `json:"retired"`     // Flag if the Plan is no longer valid (Archived on Stripe)
-}
 
 // ensureExistence will ensure that corresponding Plan exist on Stripe, and it will populate the ID fields in the Plan object.
 func (p *Plan) ensureExistence(ctx context.Context, s *client.API) error {
