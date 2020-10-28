@@ -183,7 +183,7 @@ func main() {
 		)
 	}
 
-	subscriptionManager, err := subscription.NewManager(subscription.SubscriptionManagerOptions{
+	subscriptionManager, err := subscription.NewManager(subscription.ManagerOptions{
 		StripeClient:   stripeClient,
 		DB:             db,
 		Logger:         logger,

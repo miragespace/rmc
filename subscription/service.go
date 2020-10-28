@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/zllovesuki/rmc/auth"
 	resp "github.com/zllovesuki/rmc/response"
@@ -45,7 +46,6 @@ type PaymentSetupRequest struct {
 
 func (s *Service) setupPayment(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
 	claims := ctx.Value(auth.Context).(*auth.Claims)
 
 	logger := s.Logger.With(zap.String("CustomerID", claims.ID))
@@ -90,12 +90,11 @@ func (s *Service) setupPayment(w http.ResponseWriter, r *http.Request) {
 }
 
 type SubscriptionSetupRequest struct {
-	PlanName string `json:"planName"`
+	planID string `json:"planId"`
 }
 
 func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
 	claims := ctx.Value(auth.Context).(*auth.Claims)
 
 	logger := s.Logger.With(zap.String("CustomerID", claims.ID))
@@ -106,14 +105,15 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subscriptionParams := &stripe.SubscriptionParams{
-		Customer: stripe.String(claims.ID),
-		Items: []*stripe.SubscriptionItemsParams{
-			{
-				// Plan: stripe.String(req.PriceID),
-			},
-		},
+	plan, ok := s.SubscriptionManager.GetDefinedPlanByID(req.planID)
+	if !ok {
+		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Specified Plan is invalid or has retired"))
+		return
 	}
+	logger = logger.With(zap.String("PlanID", req.planID))
+
+	subscriptionParams := plan.GetStripeSubscriptionParams(ctx, claims.ID)
+
 	subscriptionParams.AddExpand("latest_invoice.payment_intent")
 	subscriptionParams.AddExpand("pending_setup_intent")
 
@@ -129,34 +129,77 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("%+v\n", sub)
 
-	// si := &SubscriptionItem{
-	// 	ID:                  sub.Items.Data[0].ID,
-	// 	CustomerID:          claims.ID,
-	// 	SubscriptionID:      sub.ID,
-	// 	Ready:               false, // TODO: double check this
-	// 	RunningTotalMinutes: 0,
-	// 	CurrentPeriodStart:  time.Unix(sub.CurrentPeriodStart, 0),
-	// 	Type:                SubscriptionParent,
-	// }
-	// if err := s.SubscriptionManager.Create(ctx, si); err != nil {
-	// 	logger.Error("Unable to insert subscription item record in database",
-	// 		zap.Error(err),
-	// 	)
-	// 	resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription", "Database exception"))
-	// 	return
-	// }
+	var subscription Subscription
+	if err := subscription.FromStripeResponse(sub, plan); err != nil {
+		logger.Error("Unable to construct Subscription from Stripe response",
+			zap.Error(err),
+		)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription", err.Error()))
+		return
+	}
 
-	resp.WriteResponse(w, r, sub)
+	if err := s.SubscriptionManager.Create(ctx, &subscription); err != nil {
+		logger.Error("Unable to save subscription record to database",
+			zap.Error(err),
+		)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription", "Database returns error"))
+		return
+	}
+
+	resp.WriteResponse(w, r, struct {
+		StripeResponse *stripe.Subscription `json:"stripeResponse"`
+		Subscription   *Subscription        `json:"subscription"`
+	}{
+		StripeResponse: sub,
+		Subscription:   &subscription,
+	})
 }
 
 func (s *Service) listPlans(w http.ResponseWriter, r *http.Request) {
 	resp.WriteResponse(w, r, s.SubscriptionManager.ListDefinedPlans())
 }
 
+func (s *Service) listSubscriptions(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	claims := ctx.Value(auth.Context).(*auth.Claims)
+	before := r.URL.Query().Get("before")
+
+	var parsedTime time.Time
+	if before != "" {
+		var err error
+		parsedTime, err = time.Parse(time.RFC3339Nano, before)
+		if err != nil {
+			resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Invalid before param"))
+			return
+		}
+	}
+
+	logger := s.Logger.With(zap.String("CustomerID", claims.ID))
+
+	opt := ListOption{
+		CustomerID: claims.ID,
+		Before:     parsedTime,
+		Limit:      10,
+	}
+
+	results, err := s.SubscriptionManager.List(ctx, opt)
+	if err != nil {
+		logger.Error("Unable to list subscriptions by customer id",
+			zap.Error(err),
+		)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Cannot get the list of subscriptions"))
+		return
+	}
+
+	resp.WriteResponse(w, r, results)
+}
+
 func (s *Service) Router() http.Handler {
 	r := chi.NewRouter()
 
 	r.Get("/plans", s.listPlans)
+
+	r.Get("/", s.listSubscriptions)
 	r.Post("/initialSetup", s.setupPayment)
 	r.Post("/", s.setupSubscription)
 

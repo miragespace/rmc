@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"regexp"
+	"strconv"
 	"strings"
+
+	"github.com/zllovesuki/rmc/spec"
 
 	extErrors "github.com/pkg/errors"
 	"github.com/stripe/stripe-go/v71"
@@ -24,15 +27,16 @@ import (
 // Plan.[]Part.Period
 // Plan.[]Part.Type
 // Then a new Product and its associated Prices will be created on Stripe.
-// If you want to change the Price of a Plan once it is created on Stripe, make a new Plan and mark the old ones Retired
-func loadPlansFromFile(filename string) (map[string]Plan, error) {
+// However, you can append more Part to an existing Plan, but it will apply to new Subscriptions only.
+// If you want to change the Price of a Part once it is created on Stripe, make a new Plan and mark the old ones as Retired
+func loadPlansFromFile(filename string) ([]Plan, error) {
 	jsonBytes, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot open plans JSON file")
 	}
-	plans := make(map[string]Plan)
+	plans := make([]Plan, 0, 1)
 	if err := json.Unmarshal(jsonBytes, &plans); err != nil {
-		return nil, extErrors.Wrap(err, "Invalid pla JSON file")
+		return nil, extErrors.Wrap(err, "Invalid plan JSON file")
 	}
 	return plans, nil
 }
@@ -68,29 +72,30 @@ const (
 	VariableType PartType = "Variable"
 )
 
-// Part describes each Part of a Plan
+// Part describes each Part of a Plan. This corresponds to Stripe's "Price"
 type Part struct {
 	ID            string   `json:"-"`             // Corresponding to Stripe's PriceID
 	Name          string   `json:"name"`          // Name to describe this Part
 	AmountInCents float64  `json:"amountInCents"` // Amount in cents (e.g. 15.0 for $0.015/{period})
-	Period        string   `json:"period"`        // How should the AmountInCents apply. If Type is FixedType, then this Part will be billed AmountInCents/month regardless. If Type is Variable, then this Part will be billed AmountInCents/{period} in a month
+	Period        string   `json:"period"`        // How should the AmountInCents apply. If Type is FixedType, then this Part will be billed AmountInCents/month regardless. If Type is Variable, then this Part will be billed Usage * AmountInCents/{period} in a month
 	Type          PartType `json:"type"`          // Either FixedType or VariableType
+	Primary       bool     `json:"primary"`       // Indicate if this Part is the Primary part (e.g. Instance, not Addon) or not
 }
 
 // Plan describes an Instance plan. This corresponds to Stripe's "Product"
 type Plan struct {
-	ID          string            `json:"-"`           // Corresponds to Stripe's Product ID
-	Name        string            `json:"name"`        // Represent the name shown to the customer and on Stripe
-	Description string            `json:"description"` // Shown to the customer
-	Currency    string            `json:"currency"`    // The ISO currency code (e.g. usd)
-	Interval    string            `json:"interval"`    // Billing Frequency (e.g. month)
-	Parts       []Part            `json:"parts"`       // See Part struct above
-	Parameters  map[string]string `json:"parameters"`  // Describes what this Plan will have (e.g. {Ram: 2GB, Players: 6})
-	Retired     bool              `json:"retired"`     // Flag if the Plan is no longer valid
+	ID          string          `json:"-"`           // Corresponds to Stripe's Product ID
+	Name        string          `json:"name"`        // Represent the name shown to the customer and on Stripe
+	Description string          `json:"description"` // Shown to the customer
+	Currency    string          `json:"currency"`    // The ISO currency code (e.g. usd)
+	Interval    string          `json:"interval"`    // Billing Frequency (e.g. month)
+	Parts       []Part          `json:"parts"`       // See Part struct above
+	Parameters  spec.Parameters `json:"parameters"`  // Describes what this Plan will have (e.g. {Ram: 2GB, Players: 6})
+	Retired     bool            `json:"retired"`     // Flag if the Plan is no longer valid (Archived on Stripe)
 }
 
-// EnsureExistence will ensure that corresponding Plan exist on Stripe, and it will populate the ID fields in the Plan object.
-func (p *Plan) EnsureExistence(ctx context.Context, s *client.API) error {
+// ensureExistence will ensure that corresponding Plan exist on Stripe, and it will populate the ID fields in the Plan object.
+func (p *Plan) ensureExistence(ctx context.Context, s *client.API) error {
 	// we already have it
 	if len(p.ID) > 0 {
 		return nil
@@ -113,7 +118,6 @@ func (p *Plan) EnsureExistence(ctx context.Context, s *client.API) error {
 	var prodID string
 	var count int = 0
 	for pricesIter.Next() {
-		count++
 		price := pricesIter.Price()
 		if len(prodID) == 0 {
 			prodID = price.Product.ID
@@ -124,25 +128,34 @@ func (p *Plan) EnsureExistence(ctx context.Context, s *client.API) error {
 		index := lookupMap[price.LookupKey]
 		if index > 0 {
 			p.Parts[index-1].ID = price.ID
+			count++
 		}
 	}
 	if pricesIter.Err() != nil {
 		return extErrors.Wrap(pricesIter.Err(), "Cannot ensure Plan existence on Stripe")
 	}
+	p.ID = prodID
 
 	if count == len(p.Parts) {
 		// Populate Prooduct ID
 		fmt.Println("Found all Prices and populating all IDs")
-		p.ID = prodID
+
+		// synchronize retired/archived status on Stripe
+		if _, err := s.Products.Update(p.ID, &stripe.ProductParams{
+			Params: stripe.Params{
+				Context: ctx,
+			},
+			Active: stripe.Bool(!p.Retired),
+		}); err != nil {
+			return extErrors.Wrap(err, "Cannot synchronize Plan Retired/Product Archived status on Stripe")
+		}
 		return nil
 	}
-	if count == 0 {
-		fmt.Println("Plans do not exist, creating...")
-		return p.CreateOnStripe(ctx, s)
-	}
-	return fmt.Errorf("Unexpected number of Prices for Plan \"%s\" (expected: %d, actual: %d)", p.Name, len(p.Parts), count)
+	fmt.Println("Plan or Parts do not exist, creating...")
+	return p.createPlanOnStripe(ctx, s)
 }
 
+// lookupKey will generate a unique LookupKey on stripe to identify each Part of the Plan
 func (p *Plan) lookupKey(part Part) string {
 	planName := lookupKeyRegex.ReplaceAllString(p.Name, "-")
 	partName := lookupKeyRegex.ReplaceAllString(part.Name, "-")
@@ -150,24 +163,36 @@ func (p *Plan) lookupKey(part Part) string {
 	return strings.ToLower(fmt.Sprintf("%s_%s_%s_%s_%s_%s", planName, p.Interval, part.Type, partName, amountPart, part.Period))
 }
 
-// CreateOnStripe will create corresponding prices and Products/Prices on Stripe for a given plan
-func (p *Plan) CreateOnStripe(ctx context.Context, s *client.API) error {
-	// Create corresponding Product
-	prodParams := &stripe.ProductParams{
-		Params: stripe.Params{
-			Context:  ctx,
-			Metadata: p.Parameters,
-		},
-		Active:      stripe.Bool(true),
-		Name:        stripe.String(p.Name),
-		Description: stripe.String(p.Description),
+// createPlanOnStripe will create missing Plan as Product on Stripe
+func (p *Plan) createPlanOnStripe(ctx context.Context, s *client.API) error {
+	if len(p.ID) == 0 {
+		// Create corresponding Product
+		prodParams := &stripe.ProductParams{
+			Params: stripe.Params{
+				Context:  ctx,
+				Metadata: p.Parameters,
+			},
+			Active:      stripe.Bool(true),
+			Name:        stripe.String(p.Name),
+			Description: stripe.String(p.Description),
+		}
+		stripeProduct, err := s.Products.New(prodParams)
+		if err != nil {
+			return extErrors.Wrap(err, "Cannot create Plan as Product on Stripe")
+		}
+		// Populate the Product.ID
+		p.ID = stripeProduct.ID
 	}
-	stripeProduct, err := s.Products.New(prodParams)
-	if err != nil {
-		return err
+
+	return p.createPartsOnStripe(ctx, s)
+}
+
+// createPartsOnStripe will create missing Parts as Price on Stripe
+func (p *Plan) createPartsOnStripe(ctx context.Context, s *client.API) error {
+
+	if len(p.ID) == 0 {
+		return fmt.Errorf("Plan ID doesn't exist, please create Plan before Parts")
 	}
-	// Populate the Product.ID
-	p.ID = stripeProduct.ID
 
 	fixedRecurring := &stripe.PriceRecurringParams{
 		AggregateUsage: nil,
@@ -183,9 +208,18 @@ func (p *Plan) CreateOnStripe(ctx context.Context, s *client.API) error {
 	}
 
 	for k, part := range p.Parts {
+		if len(part.ID) > 0 {
+			// already exist, don't create
+			continue
+		}
+
 		pParams := &stripe.PriceParams{
 			Params: stripe.Params{
 				Context: ctx,
+				Metadata: map[string]string{
+					"Type":    string(part.Type),
+					"Primary": strconv.FormatBool(part.Primary),
+				},
 			},
 			Active:            stripe.Bool(true),
 			Nickname:          stripe.String(part.Name),
@@ -203,13 +237,21 @@ func (p *Plan) CreateOnStripe(ctx context.Context, s *client.API) error {
 		}
 		partPrice, err := s.Prices.New(pParams)
 		if err != nil {
-			return err
+			return extErrors.Wrap(err, "Cannot create Part as Price on Stripe")
 		}
 		// Populate the ID back to the Part
 		p.Parts[k].ID = partPrice.ID
 	}
-
 	return nil
+}
+
+func (p *Plan) lookupPartID(lookupKey string) string {
+	for _, part := range p.Parts {
+		if lookupKey == p.lookupKey(part) {
+			return part.ID
+		}
+	}
+	return ""
 }
 
 // GetStripeSubscriptionParams will generate SubscriptionParams for used with Stripe from a Plan
@@ -238,80 +280,86 @@ func (p *Plan) GetStripeSubscriptionParams(ctx context.Context, customerID strin
 	return sParams
 }
 
-var d = map[string]Plan{
-	"Small": {
-		Name:        "Small Minecraft Server",
-		Description: "3 players slot with 3GB of RAM. Perfect for a small gathering",
-		Currency:    "usd",
-		Interval:    "month",
-		Parts: []Part{
-			{
-				Name:          "Monthly Fixed Price",
-				AmountInCents: 300.0,
-				Period:        "month",
-				Type:          FixedType,
-			},
-			{
-				Name:          "Per Minute price",
-				AmountInCents: 0.03,
-				Period:        "miniute",
-				Type:          VariableType,
-			},
-		},
-		Parameters: map[string]string{
-			"RAM":     "3072",
-			"Players": "3",
-		},
-		Retired: false,
-	},
-	"Medium": {
-		Name:        "Medium Minecraft Server",
-		Description: "6 players slot with 6GB of RAM. It's a party!",
-		Currency:    "usd",
-		Interval:    "month",
-		Parts: []Part{
-			{
-				Name:          "Monthly Fixed Price",
-				AmountInCents: 300.0,
-				Period:        "month",
-				Type:          FixedType,
-			},
-			{
-				Name:          "Per Minute price",
-				AmountInCents: 0.06,
-				Period:        "miniute",
-				Type:          VariableType,
-			},
-		},
-		Parameters: map[string]string{
-			"RAM":     "6144",
-			"Players": "6",
-		},
-		Retired: false,
-	},
-	"Spicy": {
-		Name:        "Spicy Minecraft Server",
-		Description: "12 players slot with 12GB of RAM. What are you doing!",
-		Currency:    "usd",
-		Interval:    "month",
-		Parts: []Part{
-			{
-				Name:          "Monthly Fixed Price",
-				AmountInCents: 300.0,
-				Period:        "month",
-				Type:          FixedType,
-			},
-			{
-				Name:          "Per Minute price",
-				AmountInCents: 0.12,
-				Period:        "miniute",
-				Type:          VariableType,
-			},
-		},
-		Parameters: map[string]string{
-			"RAM":     "12288",
-			"Players": "12",
-		},
-		Retired: false,
-	},
-}
+// var example = []Plan{
+// 	{
+// 		Name:        "Small Minecraft Server",
+// 		Description: "3 players slot with 3GB of RAM. Perfect for a small gathering",
+// 		Currency:    "usd",
+// 		Interval:    "month",
+// 		Parts: []Part{
+// 			{
+// 				Name:          "Monthly Fixed Price",
+// 				AmountInCents: 300.0,
+// 				Period:        "month",
+// 				Type:          FixedType,
+// 				Primary:       true,
+// 			},
+// 			{
+// 				Name:          "Per Minute price",
+// 				AmountInCents: 0.03,
+// 				Period:        "miniute",
+// 				Type:          VariableType,
+// 				Primary:       true,
+// 			},
+// 		},
+// 		Parameters: map[string]string{
+// 			"RAM":     "3072",
+// 			"Players": "3",
+// 		},
+// 		Retired: false,
+// 	},
+// 	{
+// 		Name:        "Medium Minecraft Server",
+// 		Description: "6 players slot with 6GB of RAM. It's a party!",
+// 		Currency:    "usd",
+// 		Interval:    "month",
+// 		Parts: []Part{
+// 			{
+// 				Name:          "Monthly Fixed Price",
+// 				AmountInCents: 300.0,
+// 				Period:        "month",
+// 				Type:          FixedType,
+// 				Primary:       true,
+// 			},
+// 			{
+// 				Name:          "Per Minute price",
+// 				AmountInCents: 0.06,
+// 				Period:        "miniute",
+// 				Type:          VariableType,
+// 				Primary:       true,
+// 			},
+// 		},
+// 		Parameters: map[string]string{
+// 			"RAM":     "6144",
+// 			"Players": "6",
+// 		},
+// 		Retired: false,
+// 	},
+// 	{
+// 		Name:        "Spicy Minecraft Server",
+// 		Description: "12 players slot with 12GB of RAM. What are you doing!",
+// 		Currency:    "usd",
+// 		Interval:    "month",
+// 		Parts: []Part{
+// 			{
+// 				Name:          "Monthly Fixed Price",
+// 				AmountInCents: 300.0,
+// 				Period:        "month",
+// 				Type:          FixedType,
+// 				Primary:       true,
+// 			},
+// 			{
+// 				Name:          "Per Minute price",
+// 				AmountInCents: 0.12,
+// 				Period:        "miniute",
+// 				Type:          VariableType,
+// 				Primary:       true,
+// 			},
+// 		},
+// 		Parameters: map[string]string{
+// 			"RAM":     "12288",
+// 			"Players": "12",
+// 		},
+// 		Retired: false,
+// 	},
+// }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
 
@@ -134,6 +135,9 @@ func (t *Task) handleProvisionReply(ctx context.Context, reply *protocol.Provisi
 		zap.String("InstanceID", instanceID),
 	)
 
+	var instanceParams spec.Parameters
+	instanceParams.FromProto(repliedInstance.GetParameters())
+
 	lambda := func(current *Instance, desired *Instance) (shouldSave bool, returnError interface{}) {
 		if current == nil {
 			returnError = "nil Instance when processing provision reply"
@@ -147,8 +151,8 @@ func (t *Task) handleProvisionReply(ctx context.Context, reply *protocol.Provisi
 			}
 			switch reply.GetResult() {
 			case protocol.ProvisionReply_SUCCESS:
-				desired.ServerAddr = repliedInstance.GetAddr()
-				desired.ServerPort = repliedInstance.GetPort()
+				desired.Parameters["ServerAddr"] = instanceParams["ServerAddr"]
+				desired.Parameters["ServerPort"] = instanceParams["ServerPort"]
 				desired.State = StateRunning
 			case protocol.ProvisionReply_FAILURE:
 				returnError = "Instance provision CREATE was not successful"

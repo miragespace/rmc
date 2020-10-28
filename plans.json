@@ -1,21 +1,24 @@
-{
-    "Small": {
+[
+    {
         "name": "Small Minecraft Server",
         "description": "3 players slot with 3GB of RAM. Perfect for a small gathering",
         "currency": "usd",
         "interval": "month",
         "parts": [
             {
-                "name": "Monthly Fixed Price",
+                "name": "Monthly Fixed Price for Storage",
                 "amountInCents": 300,
                 "period": "month",
-                "type": "Fixed"
+                "type": "Fixed",
+                "primary": true
             },
             {
-                "name": "Per Minute price",
+                "name": "Per Minute Price for Bandwidth & Compute Resources",
                 "amountInCents": 0.03,
                 "period": "miniute",
-                "type": "Variable"
+                "type": "Variable",
+                "primary": true
+
             }
         ],
         "parameters": {
@@ -24,23 +27,27 @@
         },
         "retired": false
     },
-    "Medium": {
+    {
         "name": "Medium Minecraft Server",
         "description": "6 players slot with 6GB of RAM. It's a party!",
         "currency": "usd",
         "interval": "month",
         "parts": [
             {
-                "name": "Monthly Fixed Price",
+                "name": "Monthly Fixed Price for Storage",
                 "amountInCents": 300,
                 "period": "month",
-                "type": "Fixed"
+                "type": "Fixed",
+                "primary": true
+
             },
             {
-                "name": "Per Minute price",
+                "name": "Per Minute Price for Bandwidth & Compute Resources",
                 "amountInCents": 0.06,
                 "period": "miniute",
-                "type": "Variable"
+                "type": "Variable",
+                "primary": true
+
             }
         ],
         "parameters": {
@@ -49,23 +56,27 @@
         },
         "retired": false
     },
-    "Spicy": {
+    {
         "name": "Spicy Minecraft Server",
         "description": "12 players slot with 12GB of RAM. What are you doing!",
         "currency": "usd",
         "interval": "month",
         "parts": [
             {
-                "name": "Monthly Fixed Price",
+                "name": "Monthly Fixed Price for Storage",
                 "amountInCents": 300,
                 "period": "month",
-                "type": "Fixed"
+                "type": "Fixed",
+                "primary": true
+
             },
             {
-                "name": "Per Minute price",
+                "name": "Per Minute Price for Bandwidth & Compute Resources",
                 "amountInCents": 0.12,
                 "period": "miniute",
-                "type": "Variable"
+                "type": "Variable",
+                "primary": true
+
             }
         ],
         "parameters": {
@@ -74,4 +85,4 @@
         },
         "retired": false
     }
-}
+]

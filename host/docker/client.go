@@ -11,6 +11,7 @@ import (
 
 	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/protocol"
+	"github.com/zllovesuki/rmc/util"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -45,33 +46,64 @@ func NewClient(option Options) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) ProvisionInstance(ctx context.Context, p *protocol.Instance) error {
+func (c *Client) ProvisionInstance(ctx context.Context, p *protocol.Instance) (int, error) {
 	out, err := c.Client.ImagePull(ctx, spec.JavaMinecraftDockerImage, types.ImagePullOptions{})
 	if err != nil {
-		return err
+		return 0, err
 	}
 	io.Copy(ioutil.Discard, out) // needed to make sure image pull was done. TODO: ensure image existence when starting host worker
 
 	// Reference: https://medium.com/backendarmy/controlling-the-docker-engine-in-go-d25fc0fe2c45
 
-	hostBinding := nat.PortBinding{
-		HostIP:   "0.0.0.0",
-		HostPort: strconv.Itoa(int(p.GetPort())),
+	var mcServerPort string
+	var mcServerImage string
+	var mcPortType string
+	var exposedPort int
+	var instanceParams spec.Parameters
+
+	instanceParams.FromProto(p.GetParameters())
+
+	switch instanceParams["ServerEdition"] {
+	case "java":
+		mcServerPort = spec.JavaMinecraftTCPPort
+		mcServerImage = spec.JavaMinecraftDockerImage
+		mcPortType = "tcp"
+		exposedPort, err = util.GetFreeTCPPort()
+		if err != nil {
+			return 0, extErrors.Wrap(err, "Cannot obtain free TCP port")
+		}
+	case "bedrock":
+		mcServerPort = spec.BedrockMinecraftUDPPort
+		mcServerImage = spec.BedrockMinecraftDockerImage
+		mcPortType = "udp"
+		exposedPort, err = util.GetFreeUDPPort()
+		if err != nil {
+			return 0, extErrors.Wrap(err, "Cannot obtain free UDP port")
+		}
+	default:
+		return 0, fmt.Errorf("Unexpected ServerEdition: %s", instanceParams["ServerEdition"])
 	}
 
-	containerPort, err := nat.NewPort("tcp", spec.JavaMinecraftTCPPort)
+	hostBinding := nat.PortBinding{
+		HostIP:   "0.0.0.0",
+		HostPort: strconv.Itoa(exposedPort),
+	}
+
+	containerPort, err := nat.NewPort(mcPortType, mcServerPort)
 	if err != nil {
-		return extErrors.Wrap(err, "Unable to create port")
+		return 0, extErrors.Wrap(err, "Unable to create port")
 	}
 
 	portBinding := nat.PortMap{containerPort: []nat.PortBinding{hostBinding}}
 
 	resp, err := c.Client.ContainerCreate(ctx,
 		&container.Config{
-			Image: spec.JavaMinecraftDockerImage,
+			Image: mcServerImage,
 			Env: []string{ // TODO: use a builder
 				"EULA=true",
-				"VERSION=" + p.GetVersion(),
+				"VERSION=" + instanceParams["ServerVersion"],
+				"MAX_PLAYERS=" + instanceParams["Players"],
+				"MEMORY=" + instanceParams["RAM"] + "M",
 			},
 			// TODO: map volumes for persistence
 		},
@@ -79,18 +111,18 @@ func (c *Client) ProvisionInstance(ctx context.Context, p *protocol.Instance) er
 			PortBindings: portBinding,
 		},
 		nil, // network config
-		managedInstancePrefix+p.GetInstanceID(), // TODO: use a function to generate
+		managedInstancePrefix+p.GetInstanceID(),
 	)
 
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	if err := c.Client.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
-		return err
+		return 0, err
 	}
 
-	return nil
+	return exposedPort, nil
 }
 
 func (c *Client) DeleteInstance(ctx context.Context, p *protocol.Instance) error {

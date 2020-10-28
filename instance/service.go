@@ -58,7 +58,6 @@ func (s *Service) getInstance(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	claims := ctx.Value(auth.Context).(*auth.Claims)
 	instanceID := chi.URLParam(r, "id")
-	history := r.URL.Query().Get("history") != ""
 
 	logger := s.Logger.With(
 		zap.String("CustomerID", claims.ID),
@@ -67,7 +66,7 @@ func (s *Service) getInstance(w http.ResponseWriter, r *http.Request) {
 
 	opt := GetOption{
 		InstanceID:  instanceID,
-		WithHistory: history,
+		WithHistory: true,
 	}
 	inst, err := s.InstanceManager.Get(ctx, opt)
 	if err != nil {
@@ -275,6 +274,7 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 			&protocol.ProvisionRequest{
 				Instance: &protocol.Instance{
 					InstanceID: inst.ID,
+					Parameters: inst.Parameters.ToProto(),
 				},
 				Action: protocol.ProvisionRequest_DELETE,
 			}); err != nil {
@@ -294,8 +294,8 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 // NewInstanceRequest contains the request from client to provision a new instance.
 // A valid subscription must be set up before a new instance can be provisioned
 type NewInstanceRequest struct {
-	ServerVersion  string `json:"serverVersion"`
-	IsJavaEdition  bool   `json:"isJavaEdition"`
+	ServerVersion  string `json:"serverVersion"` // e.g. 1.16.3
+	ServerEdition  string `json:"serverEdition"` // "java" or "bedrock"
 	SubscriptionID string `json:"subscriptionId"`
 }
 
@@ -312,9 +312,6 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: validate server versions/java or not
-	// TODO: check which plan associated with the subscription
-
 	subOpt := subscription.GetOption{
 		CustomerID:     claims.ID,
 		SubscriptionID: req.SubscriptionID,
@@ -327,8 +324,8 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance"))
 		return
 	}
-	if sub == nil || !sub.Ready {
-		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Invalid Subscription: non-existent or pending setup"))
+	if sub == nil || sub.State != subscription.StateActive {
+		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Invalid Subscription: non-existent or inactive"))
 		return
 	}
 
@@ -362,20 +359,28 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if host == nil {
-		// TODO: make it more obvious to user and to operator
 		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance", "No suitable host available"))
 		return
 	}
 
 	logger = logger.With(zap.String("HostName", host.Name))
 
+	// TODO: validate server versions/java or not
+	plan, ok := s.SubscriptionManager.GetDefinedPlanByID(sub.PlanID)
+	if !ok {
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance", "Subscription is invalid or is tied to a retired Plan"))
+		return
+	}
+	instanceParams := plan.Parameters
+	instanceParams["ServerVersion"] = req.ServerVersion
+	instanceParams["ServerEdition"] = req.ServerEdition
+
 	inst := Instance{
 		ID:             uuid.New().String(),
 		CustomerID:     claims.ID,
 		SubscriptionID: req.SubscriptionID,
 		HostName:       host.Name,
-		ServerVersion:  req.ServerVersion,
-		IsJavaEdition:  req.IsJavaEdition,
+		Parameters:     instanceParams,
 		PreviousState:  StateUnknown,
 		State:          StateProvisioning,
 		Status:         StatusActive,
@@ -393,9 +398,8 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		if err := s.Producer.SendProvisionRequest(host.Identifier(), &protocol.ProvisionRequest{
 			Instance: &protocol.Instance{
-				InstanceID:    inst.ID,
-				Version:       req.ServerVersion,
-				IsJavaEdition: req.IsJavaEdition,
+				InstanceID: inst.ID,
+				Parameters: instanceParams.ToProto(),
 			},
 			Action: protocol.ProvisionRequest_CREATE,
 		}); err != nil {

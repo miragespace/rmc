@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	extErrors "github.com/pkg/errors"
 	"github.com/stripe/stripe-go/v71/client"
@@ -11,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type SubscriptionManagerOptions struct {
+type ManagerOptions struct {
 	StripeClient   *client.API
 	DB             *gorm.DB
 	Logger         *zap.Logger
@@ -19,11 +20,12 @@ type SubscriptionManagerOptions struct {
 }
 
 type Manager struct {
-	SubscriptionManagerOptions
-	definedPlans map[string]Plan
+	ManagerOptions
+	planArray      []Plan
+	planIDIndexMap map[string]int
 }
 
-func NewManager(option SubscriptionManagerOptions) (*Manager, error) {
+func NewManager(option ManagerOptions) (*Manager, error) {
 	if option.StripeClient == nil {
 		return nil, fmt.Errorf("nil StripeClient is invalid")
 	}
@@ -45,33 +47,79 @@ func NewManager(option SubscriptionManagerOptions) (*Manager, error) {
 		return nil, extErrors.Wrap(err, "Cannot populate defined Plans")
 	}
 
-	definedPlans := make(map[string]Plan)
-	for key, p := range plans {
-		if err := p.EnsureExistence(context.Background(), option.StripeClient); err != nil {
-			return nil, extErrors.Wrap(err, "Cannot ensure plan existence on Stripe")
+	planMap := make(map[string]int)
+	for index, p := range plans {
+		if err := p.ensureExistence(context.Background(), option.StripeClient); err != nil {
+			return nil, extErrors.Wrap(err, "Cannot ensure Plan existence on Stripe")
 		}
-		definedPlans[key] = p
+		planMap[p.ID] = index + 1
+		plans[index] = p
 	}
 
 	return &Manager{
-		SubscriptionManagerOptions: option,
-		definedPlans:               definedPlans,
+		ManagerOptions: option,
+		planIDIndexMap: planMap,
+		planArray:      plans,
 	}, nil
 }
 
-func (m *Manager) ListDefinedPlans() map[string]Plan {
-	return m.definedPlans
+func (m *Manager) ListDefinedPlans() []Plan {
+	return m.planArray
 }
 
-func (m *Manager) Create(ctx context.Context, si *SubscriptionItem) error {
+func (m *Manager) GetDefinedPlanByID(planID string) (Plan, bool) {
+	index := m.planIDIndexMap[planID]
+	if index == 0 {
+		return Plan{}, false
+	}
+
+	plan := m.planArray[index-1]
+
+	plan.Parameters = plan.Parameters.Clone()
+	return plan, true
+}
+
+func (m *Manager) Create(ctx context.Context, si *Subscription) error {
 	result := m.DB.WithContext(ctx).Create(si)
 	if result.Error != nil {
-		m.Logger.Error("Unable to create new subscription item in database",
+		m.Logger.Error("Unable to create new subscription in database",
 			zap.Error(result.Error),
 		)
-		return extErrors.Wrap(result.Error, "Cannot create subscription item")
+		return extErrors.Wrap(result.Error, "Cannot create subscription")
 	}
 	return nil
+}
+
+type ListOption struct {
+	CustomerID string
+	Before     time.Time
+	Limit      int
+}
+
+func (m *Manager) List(ctx context.Context, opt ListOption) ([]Subscription, error) {
+	baseQuery := m.DB.WithContext(ctx).Order("created_at desc")
+	if len(opt.CustomerID) > 0 {
+		baseQuery = baseQuery.Where("customer_id = ?", opt.CustomerID)
+	} else {
+		return nil, fmt.Errorf("Either ListOption.CustomerID is required")
+	}
+	if opt.Limit > 0 {
+		baseQuery = baseQuery.Limit(opt.Limit)
+	}
+	if !opt.Before.IsZero() {
+		baseQuery = baseQuery.Where("created_at < ?", opt.Before)
+	}
+
+	results := make([]Subscription, 0, 1)
+	result := baseQuery.Preload("SubscriptionItems").Find(&results)
+
+	if result.Error != nil {
+		m.Logger.Error("Database returned error",
+			zap.Error(result.Error),
+		)
+		return nil, result.Error
+	}
+	return results, nil
 }
 
 type GetOption struct {
@@ -86,12 +134,12 @@ func (m *Manager) Get(ctx context.Context, opt GetOption) (*Subscription, error)
 	if len(opt.SubscriptionID) == 0 {
 		return nil, fmt.Errorf("Either SubscriptionCheck.SubscriptionID is required")
 	}
-	var item Subscription
+	var sub Subscription
 	result := m.DB.WithContext(ctx).
 		Preload("SubscriptionItems").
 		Where("customer_id = ?", opt.CustomerID).
 		Where("id = ?", opt.SubscriptionID).
-		First(&item)
+		First(&sub)
 
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -101,28 +149,7 @@ func (m *Manager) Get(ctx context.Context, opt GetOption) (*Subscription, error)
 		return nil, result.Error
 	}
 
-	return &item, nil
-	// params := &stripe.SubscriptionParams{
-	// 	Params: stripe.Params{
-	// 		Context: ctx,
-	// 	},
-	// }
-	// params.AddExpand("customer")
-	// params.AddExpand("pending_setup_intent")
-	// subcription, err := m.StripeClient.Subscriptions.Get(subscriptionId, params)
-	// if err != nil {
-	// 	return false, extErrors.Wrap(err, "Cannot get subscription from Stripe")
-	// }
-	// if subcription == nil {
-	// 	return false, nil
-	// }
-	// if subcription.Customer.ID != customerId {
-	// 	return false, nil
-	// }
-	// if subcription.PendingSetupIntent != nil {
-	// 	return false, nil
-	// }
-	// return true, nil
+	return &sub, nil
 }
 
 func (m *Manager) CancelSubscription(ctx context.Context, subscriptionId string) error {

@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/zllovesuki/rmc/host"
@@ -10,7 +11,6 @@ import (
 	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
-	"github.com/zllovesuki/rmc/util"
 
 	"go.uber.org/zap"
 )
@@ -155,36 +155,30 @@ func (c *Controller) processProvisionRequest(ctx context.Context) {
 			requestedInstance := d.GetInstance()
 			requestedAction := d.GetAction()
 			instanceID := requestedInstance.GetInstanceID()
+			var instanceParams spec.Parameters
+			instanceParams.FromProto(requestedInstance.Parameters)
 
 			logger := c.Logger.With(
 				zap.String("InstanceID", instanceID),
 				zap.String("Action", requestedAction.String()),
 			)
 			var err error
-			var freePort int
+			var exposedPort int
 			switch requestedAction {
 			case protocol.ProvisionRequest_DELETE:
 				// TODO: timeout or force delete
 				err = c.Docker.DeleteInstance(ctx, requestedInstance)
 			case protocol.ProvisionRequest_CREATE:
-				freePort, err = util.GetFreePort()
-				if err != nil {
-					logger.Error("Cannot get a random port for provisioning",
-						zap.Error(err),
-					)
-					break
-				}
-				d.Instance.Port = uint32(freePort)
-				err = c.Docker.ProvisionInstance(ctx, requestedInstance)
+				exposedPort, err = c.Docker.ProvisionInstance(ctx, requestedInstance)
+				// inject provision parameters
+				instanceParams["ServerAddr"] = c.HostIP
+				instanceParams["ServerPort"] = strconv.Itoa(exposedPort)
+				requestedInstance.Parameters = instanceParams.ToProto()
 			default:
 				logger.Error("Received unknown request")
 				continue
 			}
 
-			reply := &protocol.ProvisionReply{
-				Instance:      requestedInstance,
-				RequestAction: requestedAction,
-			}
 			var result protocol.ProvisionReply_ProvisionResult
 			if err != nil {
 				logger.Error("Cannot provision instance",
@@ -193,11 +187,13 @@ func (c *Controller) processProvisionRequest(ctx context.Context) {
 				result = protocol.ProvisionReply_FAILURE
 			} else {
 				result = protocol.ProvisionReply_SUCCESS
-				reply.Instance.Addr = c.HostIP
-				reply.Instance.Port = uint32(freePort)
 			}
 
-			reply.Result = result
+			reply := &protocol.ProvisionReply{
+				Instance:      requestedInstance, // this should include updated Parameters, if any
+				RequestAction: requestedAction,
+				Result:        result,
+			}
 
 			if err := c.Producer.SendProvisionReply(reply); err != nil {
 				c.Logger.Error("Cannot send provision reply",

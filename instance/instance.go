@@ -4,24 +4,22 @@ import (
 	"time"
 
 	"github.com/lithammer/shortuuid/v3"
+	"github.com/zllovesuki/rmc/spec"
 	"gorm.io/gorm"
 )
 
 // Instance describes a Minecraft server instance
 type Instance struct {
-	ID             string    `json:"id" gorm:"primaryKey"`                       // UUID of the server instance. This will also be the name of the Docker container
-	CustomerID     string    `json:"customerId" gorm:"index;not null"`           // Corresponds to Stripe's customer ID
-	SubscriptionID string    `json:"subscriptionId" gorm:"uniqueIndex;not null"` // Corresponds to Stripe's subscription ID (soft defined FK to subscription)
-	HostName       string    `json:"hostName"`                                   // Defines which host the server runs on (soft defined FK to host)
-	ServerAddr     string    `json:"serverAddr"`                                 // Minecraft server host IP, usually the same as the host's ip
-	ServerPort     uint32    `json:"serverPort"`                                 // Minecraft server port
-	ServerVersion  string    `json:"serverVersion"`                              // Minecraft server version
-	IsJavaEdition  bool      `json:"isJavaEdition"`                              // Minecraft server edition (Java/Bedrock)
-	PreviousState  string    `json:"previousState"`                              // See const.go for the list of valid states
-	State          string    `json:"state"`                                      // See const.go for the list of valid states
-	Status         string    `json:"status"`                                     // Active/Terminated
-	CreatedAt      time.Time `json:"createdAt" gorm:"autoCreateTime"`            // When the instance was created
-	Histories      []History `json:"histories"`                                  // State changes throughout instance' life
+	ID             string          `json:"id" gorm:"primaryKey"`                       // UUID of the server instance. This will also be the name of the Docker container
+	CustomerID     string          `json:"customerId" gorm:"index;not null"`           // Corresponds to Stripe's customer ID
+	SubscriptionID string          `json:"subscriptionId" gorm:"uniqueIndex;not null"` // Corresponds to Stripe's subscription ID (soft defined FK to subscription)
+	HostName       string          `json:"hostName"`                                   // Defines which host the server runs on (soft defined FK to host)
+	Parameters     spec.Parameters `json:"parameters"`                                 // Defines the parameters of the instance
+	PreviousState  string          `json:"previousState"`                              // See const.go for the list of valid states
+	State          string          `json:"state"`                                      // See const.go for the list of valid states
+	Status         string          `json:"status"`                                     // Active/Terminated
+	CreatedAt      time.Time       `json:"createdAt" gorm:"autoCreateTime"`            // When the instance was created
+	Histories      []History       `json:"histories"`                                  // State changes throughout instance' life
 }
 
 // History describes when an instance's state was changed
