@@ -111,7 +111,7 @@ func (c *Client) ProvisionInstance(ctx context.Context, p *protocol.Instance) (i
 			PortBindings: portBinding,
 		},
 		nil, // network config
-		managedInstancePrefix+p.GetInstanceID(),
+		managedInstancePrefix+p.GetID(),
 	)
 
 	if err != nil {
@@ -126,7 +126,7 @@ func (c *Client) ProvisionInstance(ctx context.Context, p *protocol.Instance) (i
 }
 
 func (c *Client) DeleteInstance(ctx context.Context, p *protocol.Instance) error {
-	containerID, err := c.getContainerID(ctx, p.GetInstanceID())
+	containerID, err := c.getContainerID(ctx, p.GetID())
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot delete instance")
 	}
@@ -163,7 +163,7 @@ func (c *Client) getContainerID(ctx context.Context, instanceID string) (string,
 }
 
 func (c *Client) StopInstance(ctx context.Context, p *protocol.Instance) error {
-	containerID, err := c.getContainerID(ctx, p.GetInstanceID())
+	containerID, err := c.getContainerID(ctx, p.GetID())
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot stop instance")
 	}
@@ -175,7 +175,7 @@ func (c *Client) StopInstance(ctx context.Context, p *protocol.Instance) error {
 }
 
 func (c *Client) StartInstance(ctx context.Context, p *protocol.Instance) error {
-	containerID, err := c.getContainerID(ctx, p.GetInstanceID())
+	containerID, err := c.getContainerID(ctx, p.GetID())
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot start instance")
 	}

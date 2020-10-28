@@ -9,8 +9,6 @@ import (
 	"github.com/zllovesuki/rmc/auth"
 	"github.com/zllovesuki/rmc/host"
 	resp "github.com/zllovesuki/rmc/response"
-	"github.com/zllovesuki/rmc/spec/broker"
-	"github.com/zllovesuki/rmc/spec/protocol"
 	"github.com/zllovesuki/rmc/subscription"
 
 	"github.com/go-chi/chi"
@@ -23,7 +21,7 @@ type ServiceOptions struct {
 	SubscriptionManager *subscription.Manager
 	HostManager         *host.Manager
 	InstanceManager     *Manager
-	Producer            broker.Producer
+	LifecycleManager    LifecycleManager
 	Logger              *zap.Logger
 }
 
@@ -43,8 +41,8 @@ func NewService(option ServiceOptions) (*Service, error) {
 	if option.InstanceManager == nil {
 		return nil, fmt.Errorf("nil InstanceManager is invalid")
 	}
-	if option.Producer == nil {
-		return nil, fmt.Errorf("nil Broker is invalid")
+	if option.LifecycleManager == nil {
+		return nil, fmt.Errorf("nil LifecycleManager is invalid")
 	}
 	if option.Logger == nil {
 		return nil, fmt.Errorf("nil Logger is invalid")
@@ -192,23 +190,19 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func(inst *Instance) {
-		host := host.Host{
-			Name: inst.HostName,
+		opt := LifecycleOption{
+			HostName:   inst.HostName,
+			InstanceID: inst.ID,
+			Parameters: nil,
 		}
-		var action protocol.ControlRequest_ControlAction
+		var err error
 		switch inst.State {
 		case StateStopping:
-			action = protocol.ControlRequest_STOP
+			err = s.LifecycleManager.Stop(opt)
 		case StateStarting:
-			action = protocol.ControlRequest_START
+			err = s.LifecycleManager.Start(opt)
 		}
-		if err := s.Producer.SendControlRequest(host.Identifier(),
-			&protocol.ControlRequest{
-				Instance: &protocol.Instance{
-					InstanceID: inst.ID,
-				},
-				Action: action, // this must be defined if inst != nil
-			}); err != nil {
+		if err != nil {
 			logger.Error("Unable to send control request",
 				zap.Error(err),
 				zap.String("HostName", inst.HostName),
@@ -266,18 +260,12 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func(inst *Instance) {
-		host := host.Host{
-			Name: inst.HostName,
+		opt := LifecycleOption{
+			HostName:   inst.HostName,
+			InstanceID: inst.ID,
+			Parameters: &inst.Parameters,
 		}
-		if err := s.Producer.SendProvisionRequest(
-			host.Identifier(),
-			&protocol.ProvisionRequest{
-				Instance: &protocol.Instance{
-					InstanceID: inst.ID,
-					Parameters: inst.Parameters.ToProto(),
-				},
-				Action: protocol.ProvisionRequest_DELETE,
-			}); err != nil {
+		if err := s.LifecycleManager.Delete(opt); err != nil {
 			logger.Error("Unable to send DELETE provision request",
 				zap.Error(err),
 				zap.String("HostName", inst.HostName),
@@ -301,7 +289,6 @@ type NewInstanceRequest struct {
 
 func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
 	claims := ctx.Value(auth.Context).(*auth.Claims)
 
 	logger := s.Logger.With(zap.String("CustomerID", claims.ID))
@@ -386,7 +373,6 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		Status:         StatusActive,
 	}
 
-	// even if the user tries to race condition newInstance, uniqueIndex on SubscriptionID should prevent it
 	if err := s.InstanceManager.Create(ctx, &inst); err != nil {
 		logger.Error("Unable to create instance",
 			zap.Error(err),
@@ -396,15 +382,15 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		if err := s.Producer.SendProvisionRequest(host.Identifier(), &protocol.ProvisionRequest{
-			Instance: &protocol.Instance{
-				InstanceID: inst.ID,
-				Parameters: instanceParams.ToProto(),
-			},
-			Action: protocol.ProvisionRequest_CREATE,
-		}); err != nil {
+		opt := LifecycleOption{
+			HostName:   host.Name,
+			InstanceID: inst.ID,
+			Parameters: &inst.Parameters,
+		}
+		if err := s.LifecycleManager.Create(opt); err != nil {
 			logger.Error("Unable to send CREATE provision request",
 				zap.Error(err),
+				zap.String("HostName", inst.HostName),
 			)
 			// fail through: as long as database state is consistent, manual mediation is possible
 		}

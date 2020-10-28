@@ -54,6 +54,9 @@ func (p *Parameters) Clone() Parameters {
 
 // ToProto will convert Parameters into protobuf data type
 func (p *Parameters) ToProto() *protocol.Parameters {
+	if p == nil {
+		return nil
+	}
 	return &protocol.Parameters{
 		Data: p.Clone(),
 	}
@@ -61,6 +64,10 @@ func (p *Parameters) ToProto() *protocol.Parameters {
 
 // FromProto will convert protobuf data into Parameters
 func (p *Parameters) FromProto(pb *protocol.Parameters) {
+	if pb == nil {
+		*p = make(Parameters)
+		return
+	}
 	clone := make(map[string]string)
 	for k, v := range pb.Data {
 		clone[k] = v

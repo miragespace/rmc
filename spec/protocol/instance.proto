@@ -7,8 +7,7 @@ import "spec/protocol/parameters.proto";
 
 // Instance describes the a Minecraft server
 message Instance {
-    string InstanceID = 1;
-    string Host = 2;
+    string ID = 1;
 
     Parameters Parameters = 10;
 }

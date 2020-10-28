@@ -89,14 +89,14 @@ func (c *Controller) processControlRequest(ctx context.Context) {
 				c.Logger.Error("Received provision request with nil Instance")
 				continue
 			}
-			if d.GetInstance().GetInstanceID() == "" {
+			if d.GetInstance().GetID() == "" {
 				c.Logger.Error("Received provision request with empty InstanceID")
 				continue
 			}
 
 			requestedInstance := d.GetInstance()
 			requestedAction := d.GetAction()
-			instanceID := requestedInstance.GetInstanceID()
+			instanceID := requestedInstance.GetID()
 
 			logger := c.Logger.With(
 				zap.String("InstanceID", instanceID),
@@ -147,14 +147,14 @@ func (c *Controller) processProvisionRequest(ctx context.Context) {
 				c.Logger.Error("Received provision request with nil Instance")
 				continue
 			}
-			if d.GetInstance().GetInstanceID() == "" {
+			if d.GetInstance().GetID() == "" {
 				c.Logger.Error("Received provision request with empty InstanceID")
 				continue
 			}
 
 			requestedInstance := d.GetInstance()
 			requestedAction := d.GetAction()
-			instanceID := requestedInstance.GetInstanceID()
+			instanceID := requestedInstance.GetID()
 			var instanceParams spec.Parameters
 			instanceParams.FromProto(requestedInstance.Parameters)
 

@@ -51,13 +51,13 @@ func (t *Task) handleControlReply(ctx context.Context, reply *protocol.ControlRe
 		t.Logger.Error("Received nil protocol.Instance when processing control reply")
 		return
 	}
-	if reply.GetInstance().GetInstanceID() == "" {
+	if reply.GetInstance().GetID() == "" {
 		t.Logger.Error("Received empty InstanceID when processing control reply")
 		return
 	}
 
 	repliedInstance := reply.GetInstance()
-	instanceID := repliedInstance.GetInstanceID()
+	instanceID := repliedInstance.GetID()
 	logger := t.Logger.With(
 		zap.String("InstanceID", instanceID),
 		zap.String("Action", reply.GetRequestAction().String()),
@@ -129,13 +129,13 @@ func (t *Task) handleProvisionReply(ctx context.Context, reply *protocol.Provisi
 		t.Logger.Error("Received nil protocol.Instance when processing provision reply")
 		return
 	}
-	if reply.GetInstance().GetInstanceID() == "" {
+	if reply.GetInstance().GetID() == "" {
 		t.Logger.Error("Received empty InstanceID when processing provision reply")
 		return
 	}
 
 	repliedInstance := reply.GetInstance()
-	instanceID := repliedInstance.GetInstanceID()
+	instanceID := repliedInstance.GetID()
 	logger := t.Logger.With(
 		zap.String("InstanceID", instanceID),
 	)

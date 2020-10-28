@@ -207,11 +207,15 @@ func main() {
 		)
 	}
 
+	instanceLifecycleManager, err := instance.NewLifecycleManager(instance.LifecycleManagerOption{
+		Producer: producer,
+	})
+
 	instanceRouter, err := instance.NewService(instance.ServiceOptions{
 		SubscriptionManager: subscriptionManager,
 		HostManager:         hostManager,
 		InstanceManager:     instanceManager,
-		Producer:            producer,
+		LifecycleManager:    instanceLifecycleManager,
 		Logger:              logger,
 	})
 	if err != nil {
