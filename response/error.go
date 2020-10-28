@@ -69,11 +69,11 @@ func ErrConflict() *Error {
 }
 
 func ErrInvalidJson() *Error {
-	return ErrBadRequest().WithMessage("Invalid JSON body")
+	return ErrBadRequest().AddMessages("Invalid JSON body")
 }
 
 func ErrVerifyToken() *Error {
-	return ErrUnexpected().WithMessage("Unable to verify login token")
+	return ErrUnexpected().AddMessages("Unable to verify login token")
 }
 
 func ErrNoBearer() *Error {
