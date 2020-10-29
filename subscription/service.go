@@ -177,12 +177,58 @@ func (s *Service) listSubscriptions(w http.ResponseWriter, r *http.Request) {
 	resp.WriteResponse(w, r, results)
 }
 
+func (s *Service) getSubscription(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	claims := ctx.Value(auth.Context).(*auth.Claims)
+	id := chi.URLParam(r, "id")
+
+	sub, err := s.SubscriptionManager.Get(ctx, GetOption{
+		CustomerID:     claims.ID,
+		SubscriptionID: id,
+	})
+	if err != nil {
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to fetch subscription"))
+		return
+	}
+
+	if sub == nil {
+		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Cannot find subscription with specific ID"))
+		return
+	}
+
+	resp.WriteResponse(w, r, sub)
+}
+
+func (s *Service) getSubscriptionUsage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	claims := ctx.Value(auth.Context).(*auth.Claims)
+	id := chi.URLParam(r, "id")
+
+	usages, err := s.SubscriptionManager.GetUsage(ctx, GetOption{
+		CustomerID:     claims.ID,
+		SubscriptionID: id,
+	})
+	if err != nil {
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to fetch usages"))
+		return
+	}
+
+	if usages == nil {
+		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Cannot find usages with specific subscription ID"))
+		return
+	}
+
+	resp.WriteResponse(w, r, usages)
+}
+
 func (s *Service) Router() http.Handler {
 	r := chi.NewRouter()
 
 	r.Get("/plans", s.listPlans)
 
 	r.Get("/", s.listSubscriptions)
+	r.Get("/{id}", s.getSubscription)
+	r.Get("/{id}/usages", s.getSubscriptionUsage)
 	r.Post("/initialSetup", s.setupPayment)
 	r.Post("/", s.setupSubscription)
 

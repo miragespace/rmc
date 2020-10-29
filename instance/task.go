@@ -202,7 +202,6 @@ func (t *Task) handleProvisionReply(ctx context.Context, reply *protocol.Provisi
 		)
 	}
 	if lambdaResult.Instance != nil && lambdaResult.Instance.State == StateRemoved {
-		// TODO: report remaining usage for billing
 		if err := t.SubscriptionManager.CancelSubscription(ctx, lambdaResult.Instance.SubscriptionID); err != nil {
 			logger.Error("Unable to cancel subscription",
 				zap.String("SubscriptionID", lambdaResult.Instance.SubscriptionID),

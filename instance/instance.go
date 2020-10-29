@@ -4,9 +4,6 @@ import (
 	"time"
 
 	"github.com/zllovesuki/rmc/spec"
-
-	"github.com/lithammer/shortuuid/v3"
-	"gorm.io/gorm"
 )
 
 // Instance describes a Minecraft server instance
@@ -25,21 +22,7 @@ type Instance struct {
 
 // History describes when an instance's state was changed
 type History struct {
-	ID         string    `json:"-" gorm:"primaryKey"`                                            // ShortUUID of the history record
-	InstanceID string    `json:"-" gorm:"not null;index:idx_histories_accounting"`               // FK to Instance.ID
-	State      string    `json:"state" gorm:"not null"`                                          // State when the Instance.State was changed
-	When       time.Time `json:"when" gorm:"autoCreateTime;not null"`                            // Timestamp when the Instance.State was changed
-	Accounted  bool      `json:"-" gorm:"not null;default:false;index:idx_histories_accounting"` // Used for accounting purpose. True if the usage was accounted for and submitted for billing
-}
-
-// AfterSave will insert a history when State changes (https://gorm.io/docs/hooks.html)
-func (i *Instance) AfterSave(tx *gorm.DB) error {
-	if i.PreviousState != i.State {
-		return tx.Create(&History{
-			ID:         shortuuid.New(),
-			InstanceID: i.ID,
-			State:      i.State,
-		}).Error
-	}
-	return nil
+	InstanceID string    `json:"-" gorm:"primaryKey;not null"`         // FK to Instance.ID
+	Timestamp  time.Time `json:"timestamp" gorm:"primaryKey;not null"` // Timestamp when the Instance.State was changed
+	State      string    `json:"state" gorm:"primaryKey;not null"`     // State when the Instance.State was changed
 }

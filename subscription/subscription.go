@@ -31,13 +31,23 @@ type Subscription struct {
 
 // SubscriptionItem is a local copy of a Stripe Subscription Item under a Subscription
 type SubscriptionItem struct {
-	ID             string     `json:"id" gorm:"primaryKey"`                 // Corresponds to Stripe's Subscription Item ID
-	PartID         string     `json:"partId" gorm:"not null"`               // Corrsponds to Stripe's Price ID and Plan.[]Part.ID
-	SubscriptionID string     `json:"subscriptionId" gorm:"index;not null"` // Corresponds to the parent subscription ID that this item belongs to
-	RunningUsage   int64      `json:"runningUsage"`                         // Used for accounting purposes. This is the variable usage part of the subscription item. Round up to the nearest unit when reporting for usage
-	PeriodStart    time.Time  `json:"periodStart"`                          // Used for accounting purposes, this signals when the RunningUsage stars
-	PeriodEnd      time.Time  `json:"periodEnd"`                            // Used for accounting purposes, this signals when the RunningUsage end
-	LastReportedAt *time.Time `json:"lastReportedAt"`                       // Used for accounting purposes. This is when the the usage was last reported, if applicable
+	ID             string    `json:"id" gorm:"primaryKey"`                 // Corresponds to Stripe's Subscription Item ID
+	PartID         string    `json:"partId" gorm:"not null"`               // Corrsponds to Stripe's Price ID and Plan.[]Part.ID
+	SubscriptionID string    `json:"subscriptionId" gorm:"index;not null"` // Corresponds to the parent subscription ID that this item belongs to
+	PeriodStart    time.Time `json:"periodStart"`                          // Used for accounting purposes, this signals when the RunningUsage stars
+	PeriodEnd      time.Time `json:"periodEnd"`                            // Used for accounting purposes, this signals when the RunningUsage end
+}
+
+type Usage struct {
+	ID                 string           `json:"-" gorm:"primaryKey"`
+	StartDate          time.Time        `json:"startDate"`
+	EndDate            time.Time        `json:"endDate"`
+	Unit               string           `json:"unit"`
+	Amount             int64            `json:"amount"`
+	SubscriptionID     string           `json:"-" gorm:"index;not null"`
+	SubscriptionItemID string           `json:"-" gorm:"index;not null"`
+	Subscription       Subscription     `json:"subscription"`
+	SubscriptionItem   SubscriptionItem `json:"subscriptionItem"`
 }
 
 // FromStripeResponse will construct a local copy of Subscription from Stripe's response of subscription object
@@ -52,7 +62,6 @@ func (s *Subscription) FromStripeResponse(sub *stripe.Subscription, plan Plan) e
 			ID:             subItem.ID,
 			PartID:         partID,
 			SubscriptionID: sub.ID,
-			RunningUsage:   0,
 			PeriodStart:    time.Unix(sub.CurrentPeriodStart, 0), // TODO: revisit this
 			PeriodEnd:      time.Unix(sub.CurrentPeriodEnd, 0),   // TODO: revisit this
 		}

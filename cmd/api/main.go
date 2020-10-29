@@ -169,13 +169,6 @@ func main() {
 		)
 	}
 
-	instanceManager, err := instance.NewManager(logger, db)
-	if err != nil {
-		logger.Fatal("Cannot initialize InstanceManager",
-			zap.Error(err),
-		)
-	}
-
 	hostManager, err := host.NewManager(logger, db)
 	if err != nil {
 		logger.Fatal("Cannot initialize HostManager",
@@ -191,6 +184,17 @@ func main() {
 	})
 	if err != nil {
 		logger.Fatal("Cannot initialize SubscriptionManager",
+			zap.Error(err),
+		)
+	}
+
+	instanceManager, err := instance.NewManager(instance.ManagerOptions{
+		DB:                  db,
+		Logger:              logger,
+		SubscriptionManager: subscriptionManager,
+	})
+	if err != nil {
+		logger.Fatal("Cannot initialize InstanceManager",
 			zap.Error(err),
 		)
 	}

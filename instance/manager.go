@@ -7,21 +7,28 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/zllovesuki/rmc/subscription"
+
 	extErrors "github.com/pkg/errors"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
+type ManagerOptions struct {
+	DB                  *gorm.DB
+	Logger              *zap.Logger
+	SubscriptionManager *subscription.Manager // TODO: use event sourcing instead of requiring SubscriptionManager as dependency
+}
+
 // Manager handles the database operations relating to Instance
 type Manager struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	ManagerOptions
 }
 
 func historyWithLimit(limit int) func(*gorm.DB) *gorm.DB {
 	return func(s *gorm.DB) *gorm.DB {
-		baseQuery := s.Order("histories.when desc")
+		baseQuery := s.Order("histories.timestamp desc")
 		if limit > 0 {
 			baseQuery = baseQuery.Limit(limit)
 		}
@@ -30,21 +37,29 @@ func historyWithLimit(limit int) func(*gorm.DB) *gorm.DB {
 }
 
 // NewManager returns a new Manager for instances
-func NewManager(logger *zap.Logger, db *gorm.DB) (*Manager, error) {
-	if err := db.AutoMigrate(&Instance{}, &History{}); err != nil {
+func NewManager(option ManagerOptions) (*Manager, error) {
+	if option.DB == nil {
+		return nil, fmt.Errorf("nil DB is invalid")
+	}
+	if option.Logger == nil {
+		return nil, fmt.Errorf("nil Logger is invalid")
+	}
+	if option.SubscriptionManager == nil {
+		return nil, fmt.Errorf("SubscriptionManager is required for usage reporting")
+	}
+	if err := option.DB.AutoMigrate(&Instance{}, &History{}); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot initilize instance.Manager")
 	}
 	return &Manager{
-		db:     db,
-		logger: logger,
+		ManagerOptions: option,
 	}, nil
 }
 
 // Create will insert an Instance record to the database
 func (m *Manager) Create(ctx context.Context, inst *Instance) error {
-	result := m.db.WithContext(ctx).Create(inst)
+	result := m.DB.WithContext(ctx).Create(inst)
 	if result.Error != nil {
-		m.logger.Error("Unable to create new instance in database",
+		m.Logger.Error("Unable to create new instance in database",
 			zap.Error(result.Error),
 		)
 		return extErrors.Wrap(result.Error, "Cannot create instance")
@@ -61,7 +76,7 @@ type GetOption struct {
 
 // Get will attempt to lookup and return an Instance record as specified in GetOption
 func (m *Manager) Get(ctx context.Context, opt GetOption) (*Instance, error) {
-	baseQuery := m.db.WithContext(ctx)
+	baseQuery := m.DB.WithContext(ctx)
 	if len(opt.InstanceID) > 0 {
 		baseQuery = baseQuery.Where("id = ?", opt.InstanceID)
 	} else if len(opt.SubscriptionID) > 0 {
@@ -79,26 +94,13 @@ func (m *Manager) Get(ctx context.Context, opt GetOption) (*Instance, error) {
 	}
 
 	if result.Error != nil {
-		m.logger.Error("Database returned error",
+		m.Logger.Error("Database returned error",
 			zap.Error(result.Error),
 		)
 		return nil, extErrors.Wrap(result.Error, "Cannot get instance by id")
 	}
 
 	return &inst, nil
-}
-
-// Update will update an Instance record without transaction. If transaction is required, use LambdaUpdate
-func (m *Manager) Update(ctx context.Context, inst *Instance) error {
-	result := m.db.WithContext(ctx).Save(inst)
-
-	if result.Error != nil {
-		m.logger.Error("Database returned error",
-			zap.Error(result.Error),
-		)
-		return result.Error
-	}
-	return nil
 }
 
 // ListOption is used when querying for a list of Instance records
@@ -112,7 +114,7 @@ type ListOption struct {
 
 // List will return all Instance records as specified in ListOption
 func (m *Manager) List(ctx context.Context, opt ListOption) ([]Instance, error) {
-	baseQuery := m.db.WithContext(ctx).Order("created_at desc")
+	baseQuery := m.DB.WithContext(ctx).Order("created_at desc")
 	if len(opt.CustomerID) > 0 {
 		baseQuery = baseQuery.Where("customer_id = ?", opt.CustomerID)
 	} else if len(opt.SubscriptionID) > 0 {
@@ -134,7 +136,7 @@ func (m *Manager) List(ctx context.Context, opt ListOption) ([]Instance, error) 
 	result := baseQuery.Find(&results)
 
 	if result.Error != nil {
-		m.logger.Error("Database returned error",
+		m.Logger.Error("Database returned error",
 			zap.Error(result.Error),
 		)
 		return nil, result.Error
@@ -160,8 +162,12 @@ type LambdaResult struct {
 // LambdaUpdate will perform a transactional update based on the lambda function.
 // The selected Instance will be locked with FOR UPDATE
 func (m *Manager) LambdaUpdate(ctx context.Context, id string, lambda LambdaUpdateFunc) LambdaResult {
+	logger := m.Logger.With(
+		zap.String("InstanceID", id),
+	)
+
 	var result LambdaResult
-	err := m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := m.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current Instance
 		lookupRes := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -172,18 +178,24 @@ func (m *Manager) LambdaUpdate(ctx context.Context, id string, lambda LambdaUpda
 			shouldSave, returnValue := lambda(&current, &desired)
 			if shouldSave {
 				if saveRes := tx.Save(&desired); saveRes.Error != nil {
+					logger.Error("Cannot save Instance changes",
+						zap.Error(saveRes.Error),
+					)
 					return saveRes.Error
 				}
 			}
 			result.Instance = &desired
 			result.ReturnValue = returnValue
-			return nil
+			return m.recordHistory(ctx, tx, &desired)
 		} else if errors.Is(lookupRes.Error, gorm.ErrRecordNotFound) {
 			_, returnValue := lambda(nil, nil)
 			result.Instance = nil
 			result.ReturnValue = returnValue
 			return nil
 		}
+		logger.Error("Cannot lookup Instance by ID",
+			zap.Error(lookupRes.Error),
+		)
 		return lookupRes.Error
 	}, &sql.TxOptions{
 		Isolation: sql.LevelSerializable,
@@ -191,4 +203,76 @@ func (m *Manager) LambdaUpdate(ctx context.Context, id string, lambda LambdaUpda
 
 	result.TxError = err
 	return result
+}
+
+func (m *Manager) recordHistory(ctx context.Context, tx *gorm.DB, instance *Instance) error {
+	logger := m.Logger.With(
+		zap.String("InstanceID", instance.ID),
+	)
+
+	now := time.Now()
+
+	// insert a History record here
+	if instance.PreviousState != instance.State {
+		if histRes := tx.Create(&History{
+			InstanceID: instance.ID,
+			Timestamp:  now,
+			State:      instance.State,
+		}); histRes.Error != nil {
+			logger.Error("Cannot insert History log",
+				zap.Error(histRes.Error),
+			)
+			return histRes.Error
+		}
+	}
+
+	if instance.PreviousState != StateStopping || instance.State != StateStopped {
+		return nil
+	}
+
+	// If the State becomes "StateStopped", look back to find the last
+	// timestamp when it was "StateRunning". Then SubscriptionManager
+	// should be able to determine how much usage we need to record (if any)
+	var previousLog History
+	pastRes := tx.Order("histories.timestamp desc").
+		Limit(1).
+		Where("instance_id = ? AND timestamp < ? AND state IN ?",
+			instance.ID,
+			now,
+			[]string{StateRunning, StateStopped},
+		).
+		First(&previousLog)
+
+	// ErrRecordNotFound is an error, and if current State is "Stopped",
+	// there must exists a corresponding "Start" history
+	if pastRes.Error != nil {
+		logger.Error("Cannot look back History logs to determine usage",
+			zap.Error(pastRes.Error),
+		)
+		return pastRes.Error
+	}
+	if previousLog.State != StateRunning {
+		logger.Error("Unable to find corresponding previous Start history log",
+			zap.Error(pastRes.Error),
+		)
+		return fmt.Errorf("Previous History log is inconsistent with current State (expected: Running, actual: %s", previousLog.State)
+	}
+
+	opt := subscription.RecordUsageOption{
+		CustomerID:     instance.CustomerID,
+		SubscriptionID: instance.SubscriptionID,
+
+		CurrentlyRunning:  false,
+		PreviousStartDate: &previousLog.Timestamp,
+		CurrentEndDate:    &now,
+		Primary:           true,
+	}
+	if err := m.SubscriptionManager.RecordUsage(ctx, opt); err != nil {
+		logger.Error("Unable to record usage in SubscriptionManager",
+			zap.Error(err),
+		)
+		return err
+	}
+
+	return nil
 }

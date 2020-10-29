@@ -102,13 +102,6 @@ func main() {
 	}
 	defer amqpBroker.Close()
 
-	instanceManager, err := instance.NewManager(logger, db)
-	if err != nil {
-		logger.Fatal("Cannot initialize InstanceManager",
-			zap.Error(err),
-		)
-	}
-
 	subscriptionManager, err := subscription.NewManager(subscription.ManagerOptions{
 		StripeClient:   stripeClient,
 		DB:             db,
@@ -117,6 +110,17 @@ func main() {
 	})
 	if err != nil {
 		logger.Fatal("Cannot initialize SubscriptionManager",
+			zap.Error(err),
+		)
+	}
+
+	instanceManager, err := instance.NewManager(instance.ManagerOptions{
+		DB:                  db,
+		Logger:              logger,
+		SubscriptionManager: subscriptionManager,
+	})
+	if err != nil {
+		logger.Fatal("Cannot initialize InstanceManager",
 			zap.Error(err),
 		)
 	}
