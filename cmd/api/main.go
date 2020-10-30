@@ -177,10 +177,9 @@ func main() {
 	}
 
 	subscriptionManager, err := subscription.NewManager(subscription.ManagerOptions{
-		StripeClient:   stripeClient,
-		DB:             db,
-		Logger:         logger,
-		PathToPlanJSON: os.Getenv("PATH_TO_PLAN_JSON"),
+		StripeClient: stripeClient,
+		DB:           db,
+		Logger:       logger,
 	})
 	if err != nil {
 		logger.Fatal("Cannot initialize SubscriptionManager",
@@ -267,6 +266,12 @@ func main() {
 	authenticated.Mount("/instances", instanceRouter.Router())
 	authenticated.Mount("/subscriptions", subscriptionRouter.Router())
 	authenticated.Mount("/hosts", hostRouter.Router())
+
+	// TODO: authentication
+	internal := chi.NewRouter()
+	internal.Mount("/subscriptions", subscriptionRouter.AdminRouter())
+
+	r.Mount("/internal", internal)
 
 	// For application insights
 	r.Mount("/debug", middleware.Profiler())

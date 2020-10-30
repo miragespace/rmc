@@ -25,13 +25,12 @@ require (
 	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/johnsto/go-passwordless v0.0.0-20200616130417-d7e95aa614c8
 	github.com/joho/godotenv v1.3.0
-	github.com/lithammer/shortuuid/v3 v3.0.4
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/streadway/amqp v1.0.0
-	github.com/stripe/stripe-go/v71 v71.48.0
+	github.com/stripe/stripe-go/v72 v72.21.0
 	go.uber.org/zap v1.16.0
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
 	google.golang.org/grpc v1.33.1 // indirect

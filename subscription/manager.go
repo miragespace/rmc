@@ -7,26 +7,22 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lithammer/shortuuid/v3"
 	extErrors "github.com/pkg/errors"
-	"github.com/stripe/stripe-go/v71"
-	"github.com/stripe/stripe-go/v71/client"
+	"github.com/stripe/stripe-go/v72"
+	"github.com/stripe/stripe-go/v72/client"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 type ManagerOptions struct {
-	StripeClient   *client.API
-	DB             *gorm.DB
-	Logger         *zap.Logger
-	PathToPlanJSON string
+	StripeClient *client.API
+	DB           *gorm.DB
+	Logger       *zap.Logger
 }
 
 type Manager struct {
 	ManagerOptions
-	planArray      []Plan
-	planIDIndexMap map[string]int
 }
 
 func NewManager(option ManagerOptions) (*Manager, error) {
@@ -39,52 +35,17 @@ func NewManager(option ManagerOptions) (*Manager, error) {
 	if option.Logger == nil {
 		return nil, fmt.Errorf("nil Logger is invalid")
 	}
-	if len(option.PathToPlanJSON) == 0 {
-		return nil, fmt.Errorf("empty PathToPlanJSON is invalid")
-	}
-	if err := option.DB.AutoMigrate(&Subscription{}, &SubscriptionItem{}, &Usage{}); err != nil {
+	if err := option.DB.AutoMigrate(&Plan{}, &Part{}, &Subscription{}, &SubscriptionItem{}, &Usage{}); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot initilize subscription.Manager")
-	}
-
-	plans, err := loadPlansFromFile(option.PathToPlanJSON)
-	if err != nil {
-		return nil, extErrors.Wrap(err, "Cannot populate defined Plans")
-	}
-
-	planMap := make(map[string]int)
-	for index, p := range plans {
-		if err := p.ensureExistence(context.Background(), option.StripeClient); err != nil {
-			return nil, extErrors.Wrap(err, "Cannot ensure Plan existence on Stripe")
-		}
-		planMap[p.ID] = index + 1
-		plans[index] = p
 	}
 
 	return &Manager{
 		ManagerOptions: option,
-		planIDIndexMap: planMap,
-		planArray:      plans,
 	}, nil
 }
 
-func (m *Manager) ListDefinedPlans() []Plan {
-	return m.planArray
-}
-
-func (m *Manager) GetDefinedPlanByID(planID string) (Plan, bool) {
-	index := m.planIDIndexMap[planID]
-	if index == 0 {
-		return Plan{}, false
-	}
-
-	plan := m.planArray[index-1]
-
-	plan.Parameters = plan.Parameters.Clone()
-	return plan, true
-}
-
 func (m *Manager) Create(ctx context.Context, si *Subscription) error {
-	result := m.DB.WithContext(ctx).Create(si)
+	result := m.DB.WithContext(ctx).Omit("Plan", "SubscriptionItems.Part").Create(si)
 	if result.Error != nil {
 		m.Logger.Error("Unable to create new subscription in database",
 			zap.Error(result.Error),
@@ -101,7 +62,12 @@ type ListOption struct {
 }
 
 func (m *Manager) List(ctx context.Context, opt ListOption) ([]Subscription, error) {
-	baseQuery := m.DB.WithContext(ctx).Order("created_at desc")
+	baseQuery := m.DB.WithContext(ctx).
+		Preload("SubscriptionItems").
+		Preload("SubscriptionItems.Part").
+		Preload("Plan").
+		Preload("Plan.Parts").
+		Order("created_at desc")
 	if len(opt.CustomerID) > 0 {
 		baseQuery = baseQuery.Where("customer_id = ?", opt.CustomerID)
 	} else {
@@ -115,7 +81,7 @@ func (m *Manager) List(ctx context.Context, opt ListOption) ([]Subscription, err
 	}
 
 	results := make([]Subscription, 0, 1)
-	result := baseQuery.Preload("SubscriptionItems").Find(&results)
+	result := baseQuery.Find(&results)
 
 	if result.Error != nil {
 		m.Logger.Error("Database returned error",
@@ -141,6 +107,9 @@ func (m *Manager) Get(ctx context.Context, opt GetOption) (*Subscription, error)
 	var sub Subscription
 	result := m.DB.WithContext(ctx).
 		Preload("SubscriptionItems").
+		Preload("SubscriptionItems.Part").
+		Preload("Plan").
+		Preload("Plan.Parts").
 		Where("customer_id = ?", opt.CustomerID).
 		Where("id = ?", opt.SubscriptionID).
 		First(&sub)
@@ -174,12 +143,18 @@ func (m *Manager) GetUsage(ctx context.Context, opt GetOption) ([]Usage, error) 
 		return nil, nil
 	}
 
+	subItemsID := make([]string, 0, 2)
+	for _, item := range sub.SubscriptionItems {
+		subItemsID = append(subItemsID, item.ID)
+	}
+
 	usages := make([]Usage, 0, 2)
 	result = m.DB.WithContext(ctx).
-		Preload("Subscription.SubscriptionItems").
-		Preload(clause.Associations).
+		Clauses(clause.Locking{Strength: "SHARE"}).
+		Preload("SubscriptionItem").
+		Preload("SubscriptionItem.Part").
 		Order("usages.end_date desc").
-		Where("subscription_id = ?", opt.SubscriptionID).
+		Where("subscription_item_id IN ?", subItemsID).
 		Find(&usages)
 
 	if result.Error != nil {
@@ -314,30 +289,23 @@ func (m *Manager) newUsage(tx *gorm.DB, sub *Subscription, opt newUsageOption) e
 	if !opt.Primary && opt.PartID == nil {
 		return fmt.Errorf("PartID cannot be nil when creating secondary usage")
 	}
-	plan, ok := m.GetDefinedPlanByID(sub.PlanID)
-	if !ok {
-		return fmt.Errorf("Unable to find Plan with ID %s in defined plans", sub.PlanID)
-	}
 
-	variablePartID := plan.findVariablePartID(opt.Primary, opt.PartID)
-	if variablePartID == "" {
+	variablePart := sub.Plan.findVariablePart(opt.Primary, opt.PartID)
+	if variablePart == nil {
 		return fmt.Errorf("Cannot find variable Part in Plan with ID %s", sub.PlanID)
 	}
-	subscriptionItemID := sub.findSubscriptionItemIDByPartID(variablePartID)
-	if subscriptionItemID == "" {
-		return fmt.Errorf("Cannot find corresponding subscriptionItemID")
+	subscriptionItem := sub.findSubscriptionItemByPartID(variablePart.ID)
+	if subscriptionItem == nil {
+		return fmt.Errorf("Cannot find corresponding subscriptionItem")
 	}
 
 	currentBillingStart := sub.SubscriptionItems[0].PeriodStart
 	currentBillingEnd := sub.SubscriptionItems[0].PeriodEnd
 	usage := &Usage{
-		ID:                 shortuuid.New(),
-		Amount:             opt.Amount,
+		AggregateTotal:     opt.Amount,
 		StartDate:          currentBillingStart,
 		EndDate:            currentBillingEnd,
-		IsPrimary:          opt.Primary,
-		SubscriptionID:     sub.ID,
-		SubscriptionItemID: subscriptionItemID,
+		SubscriptionItemID: subscriptionItem.ID,
 	}
 	return tx.Create(&usage).Error
 }
@@ -356,12 +324,31 @@ func (m *Manager) IncrementPrimaryUsage(ctx context.Context, opts []PrimaryUsage
 	}
 	return m.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, aggr := range opts {
+			var sub Subscription
+			lookupRes := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+				Preload("SubscriptionItems").
+				Preload("SubscriptionItems.Part").
+				Preload("Plan").
+				Preload("Plan.Parts").
+				Where("id = ?", aggr.SubscriptionID).
+				First(&sub)
+			if lookupRes.Error != nil {
+				return lookupRes.Error
+			}
+			var subItemID string
+			for _, item := range sub.SubscriptionItems {
+				if item.Part.Primary && item.Part.Type == VariableType {
+					subItemID = item.ID
+				}
+			}
+			if len(subItemID) == 0 {
+				return fmt.Errorf("No primary variable part for subscription with ID %s", aggr.SubscriptionID)
+			}
 			// try updating current period usage record
 			res := tx.Model(&Usage{}).
-				Where("subscription_id = ?", aggr.SubscriptionID).
+				Where("subscription_item_id = ?", subItemID).
 				Where("start_date < ? AND ? <= end_date", aggr.ReferenceTime, aggr.ReferenceTime).
-				Where("is_primary = ?", true).
-				UpdateColumn("amount", gorm.Expr("amount + ?", aggr.Amount))
+				UpdateColumn("aggregate_total", gorm.Expr("aggregate_total + ?", aggr.Amount))
 			if res.Error != nil {
 				return res.Error
 			}
@@ -375,13 +362,6 @@ func (m *Manager) IncrementPrimaryUsage(ctx context.Context, opts []PrimaryUsage
 				continue
 			}
 			// new usage record
-			var sub Subscription
-			lookupRes := tx.Preload("SubscriptionItems").
-				Where("id = ?", aggr.SubscriptionID).
-				First(&sub)
-			if lookupRes.Error != nil {
-				return lookupRes.Error
-			}
 			if err := m.newUsage(tx, &sub, newUsageOption{
 				Amount:  aggr.Amount,
 				Primary: true,
@@ -403,12 +383,5 @@ type SecondaryUsageOption struct {
 }
 
 func (m *Manager) IncrementSecondaryUsage(ctx context.Context, opts []SecondaryUsageOption) error {
-	// find the item with given part id, then increment that usage
-	// should be something like this:
-	// res := tx.Model(&Usage{}).
-	// 	Where("subscription_item_id = ?", subscriptionItemID). // notice it is using item id, not subscription id
-	// 	Where("start_date < ? AND ? <= end_date", aggr.ReferenceTime, aggr.ReferenceTime).
-	// 	Where("is_primary = ?", false). // notice it is is_primary = false
-	// 	UpdateColumn("amount", gorm.Expr("amount + ?", aggr.Amount))
-	return nil
+	panic("not implemented")
 }

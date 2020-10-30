@@ -211,7 +211,7 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 		}
 	}(lambdaResult.Instance)
 
-	// background task should handle the usage update, if START/STOP was successful
+	// background task should handle the aggregate usage update
 
 	w.WriteHeader(http.StatusAccepted)
 }
@@ -353,9 +353,13 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 	logger = logger.With(zap.String("HostName", host.Name))
 
 	// TODO: validate server versions/java or not
-	plan, ok := s.SubscriptionManager.GetDefinedPlanByID(sub.PlanID)
-	if !ok {
-		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance", "Subscription is invalid or is tied to a retired Plan"))
+	plan, err := s.SubscriptionManager.GetPlan(ctx, sub.PlanID)
+	if err != nil {
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to create Instance", "Cannot fetch Plan from database"))
+		return
+	}
+	if plan.Retired {
+		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Unable to create Instance", "Subscription is invalid or is tied to a retired Plan"))
 		return
 	}
 	instanceParams := plan.Parameters

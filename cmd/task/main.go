@@ -103,10 +103,9 @@ func main() {
 	defer amqpBroker.Close()
 
 	subscriptionManager, err := subscription.NewManager(subscription.ManagerOptions{
-		StripeClient:   stripeClient,
-		DB:             db,
-		Logger:         logger,
-		PathToPlanJSON: os.Getenv("PATH_TO_PLAN_JSON"),
+		StripeClient: stripeClient,
+		DB:           db,
+		Logger:       logger,
 	})
 	if err != nil {
 		logger.Fatal("Cannot initialize SubscriptionManager",

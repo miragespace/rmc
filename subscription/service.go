@@ -10,7 +10,7 @@ import (
 	resp "github.com/zllovesuki/rmc/response"
 
 	"github.com/go-chi/chi"
-	"github.com/stripe/stripe-go/v71"
+	"github.com/stripe/stripe-go/v72"
 	"go.uber.org/zap"
 )
 
@@ -90,16 +90,21 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plan, ok := s.SubscriptionManager.GetDefinedPlanByID(req.PlanID)
-	if !ok {
-		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Specified Plan is invalid or has retired"))
+	plan, err := s.SubscriptionManager.GetPlan(ctx, req.PlanID)
+	if err != nil {
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription", "Database returns error"))
+		return
+	}
+	if plan.Retired {
+		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Specified Plan has retired"))
 		return
 	}
 	logger = logger.With(zap.String("PlanID", req.PlanID))
+	fmt.Printf("%+v\n", plan)
 
 	opt := CreateFromPlanOption{
 		CustomerID: claims.ID,
-		Plan:       plan,
+		Plan:       *plan,
 	}
 
 	sub, err := s.SubscriptionManager.CreateSubscriptionFromPlan(ctx, opt)
@@ -136,10 +141,6 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 		StripeResponse: sub,
 		Subscription:   &subscription,
 	})
-}
-
-func (s *Service) listPlans(w http.ResponseWriter, r *http.Request) {
-	resp.WriteResponse(w, r, s.SubscriptionManager.ListDefinedPlans())
 }
 
 func (s *Service) listSubscriptions(w http.ResponseWriter, r *http.Request) {
@@ -219,6 +220,47 @@ func (s *Service) getSubscriptionUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp.WriteResponse(w, r, usages)
+}
+
+func (s *Service) createPlans(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	plans := make([]*Plan, 0, 1)
+
+	if err := json.NewDecoder(r.Body).Decode(&plans); err != nil {
+		resp.WriteError(w, r, resp.ErrInvalidJson())
+		return
+	}
+
+	if err := s.SubscriptionManager.CreatePlans(ctx, plans); err != nil {
+		s.Logger.Error("Unable to create plans",
+			zap.Error(err),
+		)
+		resp.WriteError(w, r, resp.ErrUnexpected().WithResult(err).AddMessages("Unable to create plans"))
+		return
+	}
+
+	resp.WriteResponse(w, r, plans)
+}
+
+func (s *Service) listPlans(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	plans, err := s.SubscriptionManager.ListPlans(ctx)
+	if err != nil {
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to list plans"))
+		return
+	}
+
+	resp.WriteResponse(w, r, plans)
+}
+
+func (s *Service) AdminRouter() http.Handler {
+	r := chi.NewRouter()
+
+	r.Post("/plans", s.createPlans)
+	r.Get("/plans", s.listPlans)
+
+	return r
 }
 
 func (s *Service) Router() http.Handler {
