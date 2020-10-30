@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"github.com/zllovesuki/rmc/spec/broker"
+
 	"go.uber.org/zap"
 )
 

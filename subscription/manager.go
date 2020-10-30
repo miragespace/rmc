@@ -302,27 +302,32 @@ func (m *Manager) CancelSubscription(ctx context.Context, subscriptionID string)
 // TODO: support non-primary increment
 
 type newUsageOption struct {
+	PartID  *string
 	Amount  int64
 	Primary bool
 }
 
 func (m *Manager) newUsage(tx *gorm.DB, sub *Subscription, opt newUsageOption) error {
+	if sub == nil {
+		return fmt.Errorf("Subscription cannot be nil")
+	}
+	if !opt.Primary && opt.PartID == nil {
+		return fmt.Errorf("PartID cannot be nil when creating secondary usage")
+	}
 	plan, ok := m.GetDefinedPlanByID(sub.PlanID)
 	if !ok {
 		return fmt.Errorf("Unable to find Plan with ID %s in defined plans", sub.PlanID)
 	}
-	var variablePart Part
-	for _, part := range plan.Parts {
-		if part.Primary == opt.Primary && part.Type == VariableType {
-			variablePart = part
-		}
+
+	variablePartID := plan.findVariablePartID(opt.Primary, opt.PartID)
+	if variablePartID == "" {
+		return fmt.Errorf("Cannot find variable Part in Plan with ID %s", sub.PlanID)
 	}
-	var subscriptionItemID string
-	for _, item := range sub.SubscriptionItems {
-		if item.PartID == variablePart.ID {
-			subscriptionItemID = item.ID
-		}
+	subscriptionItemID := sub.findSubscriptionItemIDByPartID(variablePartID)
+	if subscriptionItemID == "" {
+		return fmt.Errorf("Cannot find corresponding subscriptionItemID")
 	}
+
 	currentBillingStart := sub.SubscriptionItems[0].PeriodStart
 	currentBillingEnd := sub.SubscriptionItems[0].PeriodEnd
 	usage := &Usage{

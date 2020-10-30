@@ -30,7 +30,7 @@ type Part struct {
 	ID            string   `json:"id"`            // Corresponding to Stripe's PriceID
 	Name          string   `json:"name"`          // Name to describe this Part
 	AmountInCents float64  `json:"amountInCents"` // Amount in cents (e.g. 15.0 for $0.015/{period})
-	Period        string   `json:"period"`        // How should the AmountInCents apply. If Type is FixedType, then this Part will be billed AmountInCents/month regardless. If Type is Variable, then this Part will be billed Usage * AmountInCents/{period} in a month
+	Unit          string   `json:"Unit"`          // How should the AmountInCents apply. If Type is FixedType, then this Part will be billed AmountInCents/month regardless. If Type is Variable, then this Part will be billed Usage * AmountInCents/{period} in a month
 	Type          PartType `json:"type"`          // Either FixedType or VariableType
 	Primary       bool     `json:"primary"`       // Indicate if this Part is the Primary part (e.g. Instance, not Addon) or not
 }
@@ -160,7 +160,7 @@ func (p *Plan) lookupKey(part Part) string {
 	planName := lookupKeyRegex.ReplaceAllString(p.Name, "-")
 	partName := lookupKeyRegex.ReplaceAllString(part.Name, "-")
 	amountPart := fmt.Sprintf("%f", part.AmountInCents)
-	return strings.ToLower(fmt.Sprintf("%s_%s_%s_%s_%s_%s", planName, p.Interval, part.Type, partName, amountPart, part.Period))
+	return strings.ToLower(fmt.Sprintf("%s_%s_%s_%s_%s_%s", planName, p.Interval, part.Type, partName, amountPart, part.Unit))
 }
 
 // createPlanOnStripe will create missing Plan as Product on Stripe
@@ -263,6 +263,27 @@ func (p *Plan) lookupPartByID(partID string) Part {
 	return Part{}
 }
 
+func (p *Plan) findVariablePartID(primary bool, partID *string) string {
+	if !primary && partID == nil {
+		return ""
+	}
+	if p == nil || p.ID == "" || len(p.Parts) == 0 {
+		return ""
+	}
+	for _, part := range p.Parts {
+		if primary {
+			if part.Primary && part.Type == VariableType {
+				return part.ID
+			}
+		} else {
+			if !part.Primary && part.Type == VariableType && part.ID == *partID {
+				return part.ID
+			}
+		}
+	}
+	return ""
+}
+
 // GetStripeSubscriptionParams will generate SubscriptionParams for used with Stripe from a Plan
 func (p *Plan) GetStripeSubscriptionParams(ctx context.Context, customerID string) *stripe.SubscriptionParams {
 	sParams := &stripe.SubscriptionParams{
@@ -299,14 +320,14 @@ func (p *Plan) GetStripeSubscriptionParams(ctx context.Context, customerID strin
 // 			{
 // 				Name:          "Monthly Fixed Price",
 // 				AmountInCents: 300.0,
-// 				Period:        "month",
+// 				Unit:          "month",
 // 				Type:          FixedType,
 // 				Primary:       true,
 // 			},
 // 			{
 // 				Name:          "Per Minute price",
 // 				AmountInCents: 0.03,
-// 				Period:        "miniute",
+// 				Unit:          "miniute",
 // 				Type:          VariableType,
 // 				Primary:       true,
 // 			},
@@ -326,14 +347,14 @@ func (p *Plan) GetStripeSubscriptionParams(ctx context.Context, customerID strin
 // 			{
 // 				Name:          "Monthly Fixed Price",
 // 				AmountInCents: 300.0,
-// 				Period:        "month",
+// 				Unit:          "month",
 // 				Type:          FixedType,
 // 				Primary:       true,
 // 			},
 // 			{
 // 				Name:          "Per Minute price",
 // 				AmountInCents: 0.06,
-// 				Period:        "miniute",
+// 				Unit:          "miniute",
 // 				Type:          VariableType,
 // 				Primary:       true,
 // 			},
@@ -353,14 +374,14 @@ func (p *Plan) GetStripeSubscriptionParams(ctx context.Context, customerID strin
 // 			{
 // 				Name:          "Monthly Fixed Price",
 // 				AmountInCents: 300.0,
-// 				Period:        "month",
+// 				Unit:          "month",
 // 				Type:          FixedType,
 // 				Primary:       true,
 // 			},
 // 			{
 // 				Name:          "Per Minute price",
 // 				AmountInCents: 0.12,
-// 				Period:        "miniute",
+// 				Unit:          "miniute",
 // 				Type:          VariableType,
 // 				Primary:       true,
 // 			},

@@ -52,6 +52,18 @@ type Usage struct {
 	SubscriptionItem   SubscriptionItem `json:"subscriptionItem"`
 }
 
+func (s *Subscription) findSubscriptionItemIDByPartID(partID string) string {
+	if s == nil || len(s.SubscriptionItems) == 0 {
+		return ""
+	}
+	for _, item := range s.SubscriptionItems {
+		if item.PartID == partID {
+			return item.ID
+		}
+	}
+	return ""
+}
+
 // FromStripeResponse will construct a local copy of Subscription from Stripe's response of subscription object
 func (s *Subscription) FromStripeResponse(sub *stripe.Subscription, plan Plan) error {
 	items := make([]SubscriptionItem, 0, 2)
