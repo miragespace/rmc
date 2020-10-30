@@ -23,6 +23,16 @@ services:
     ports:
       - 5432:5432
 
+  crdb:
+    container_name: rmc-crdb
+    image: cockroachdb/cockroach:latest
+    volumes:
+      - ./crdb:/cockroach/cockroach-data
+    command: start --insecure --listen-addr=0.0.0.0
+    ports:
+      - "26257:26257"
+      - "8080:8080"
+
   redis:
     container_name: rmc-redis
     image: redis:6.0.5 # matching Redislab version
