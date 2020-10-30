@@ -105,7 +105,7 @@ func (m *Manager) List(ctx context.Context, opt ListOption) ([]Subscription, err
 	if len(opt.CustomerID) > 0 {
 		baseQuery = baseQuery.Where("customer_id = ?", opt.CustomerID)
 	} else {
-		return nil, fmt.Errorf("Either ListOption.CustomerID is required")
+		return nil, fmt.Errorf("CustomerID is required")
 	}
 	if opt.Limit > 0 {
 		baseQuery = baseQuery.Limit(opt.Limit)
@@ -136,7 +136,7 @@ func (m *Manager) Get(ctx context.Context, opt GetOption) (*Subscription, error)
 		return nil, fmt.Errorf("CustomerID is required")
 	}
 	if len(opt.SubscriptionID) == 0 {
-		return nil, fmt.Errorf("Either SubscriptionCheck.SubscriptionID is required")
+		return nil, fmt.Errorf("SubscriptionID is required")
 	}
 	var sub Subscription
 	result := m.DB.WithContext(ctx).
@@ -161,7 +161,7 @@ func (m *Manager) GetUsage(ctx context.Context, opt GetOption) ([]Usage, error) 
 		return nil, fmt.Errorf("CustomerID is required")
 	}
 	if len(opt.SubscriptionID) == 0 {
-		return nil, fmt.Errorf("Either SubscriptionCheck.SubscriptionID is required")
+		return nil, fmt.Errorf("SubscriptionID is required")
 	}
 	var sub Subscription
 	result := m.DB.WithContext(ctx).

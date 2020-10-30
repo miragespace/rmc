@@ -30,7 +30,7 @@ type Part struct {
 	ID            string   `json:"id"`            // Corresponding to Stripe's PriceID
 	Name          string   `json:"name"`          // Name to describe this Part
 	AmountInCents float64  `json:"amountInCents"` // Amount in cents (e.g. 15.0 for $0.015/{period})
-	Unit          string   `json:"Unit"`          // How should the AmountInCents apply. If Type is FixedType, then this Part will be billed AmountInCents/month regardless. If Type is Variable, then this Part will be billed Usage * AmountInCents/{period} in a month
+	Unit          string   `json:"unit"`          // How should the AmountInCents apply. If Type is FixedType, then this Part will be billed AmountInCents/month regardless. If Type is Variable, then this Part will be billed Usage * AmountInCents/{period} in a month
 	Type          PartType `json:"type"`          // Either FixedType or VariableType
 	Primary       bool     `json:"primary"`       // Indicate if this Part is the Primary part (e.g. Instance, not Addon) or not
 }
