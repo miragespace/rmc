@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/protobuf/ptypes"
 	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
 
+	"github.com/golang/protobuf/ptypes"
 	extErrors "github.com/pkg/errors"
 	"go.uber.org/zap"
 )

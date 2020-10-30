@@ -307,10 +307,20 @@ type newUsageOption struct {
 }
 
 func (m *Manager) newUsage(tx *gorm.DB, sub *Subscription, opt newUsageOption) error {
+	plan, ok := m.GetDefinedPlanByID(sub.PlanID)
+	if !ok {
+		return fmt.Errorf("Unable to find Plan with ID %s in defined plans", sub.PlanID)
+	}
+	var variablePart Part
+	for _, part := range plan.Parts {
+		if part.Primary == opt.Primary && part.Type == VariableType {
+			variablePart = part
+		}
+	}
 	var subscriptionItemID string
-	for _, items := range sub.SubscriptionItems {
-		if items.Type == VariableType {
-			subscriptionItemID = items.ID
+	for _, item := range sub.SubscriptionItems {
+		if item.PartID == variablePart.ID {
+			subscriptionItemID = item.ID
 		}
 	}
 	currentBillingStart := sub.SubscriptionItems[0].PeriodStart
