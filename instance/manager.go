@@ -173,30 +173,50 @@ func (m *Manager) LambdaUpdate(ctx context.Context, id string, lambda LambdaUpda
 			Clauses(clause.Locking{Strength: "UPDATE"}).
 			Preload("Histories", historyWithLimit(2)).
 			First(&current, "id = ?", id)
-		if lookupRes.Error == nil {
-			var desired Instance = current
-			shouldSave, returnValue := lambda(&current, &desired)
-			if shouldSave {
-				if saveRes := tx.Save(&desired); saveRes.Error != nil {
-					logger.Error("Cannot save Instance changes",
-						zap.Error(saveRes.Error),
-					)
-					return saveRes.Error
-				}
-			}
-			result.Instance = &desired
-			result.ReturnValue = returnValue
-			return m.recordHistory(ctx, tx, &desired)
-		} else if errors.Is(lookupRes.Error, gorm.ErrRecordNotFound) {
+
+		if errors.Is(lookupRes.Error, gorm.ErrRecordNotFound) {
 			_, returnValue := lambda(nil, nil)
 			result.Instance = nil
 			result.ReturnValue = returnValue
 			return nil
+		} else if lookupRes.Error != nil {
+			logger.Error("Cannot lookup Instance by ID",
+				zap.Error(lookupRes.Error),
+			)
+			return lookupRes.Error
 		}
-		logger.Error("Cannot lookup Instance by ID",
-			zap.Error(lookupRes.Error),
-		)
-		return lookupRes.Error
+
+		var desired Instance = current
+		shouldSave, returnValue := lambda(&current, &desired)
+		if shouldSave {
+			if saveRes := tx.Save(&desired); saveRes.Error != nil {
+				logger.Error("Cannot save Instance changes",
+					zap.Error(saveRes.Error),
+				)
+				return saveRes.Error
+			}
+		}
+		result.Instance = &desired
+		result.ReturnValue = returnValue
+
+		if current.State == desired.State {
+			return nil
+		}
+
+		ref := historyRef{
+			Instance:      &desired,
+			ReferenceTime: time.Now(),
+		}
+		logger = logger.With(zap.Time("ReferenceTime", ref.ReferenceTime))
+
+		if err := m.logHistory(tx, ref); err != nil {
+			logger.Error("Cannot insert History log",
+				zap.Error(err),
+			)
+			return err
+		}
+		return nil
+
 	}, &sql.TxOptions{
 		Isolation: sql.LevelSerializable,
 	})
@@ -205,74 +225,36 @@ func (m *Manager) LambdaUpdate(ctx context.Context, id string, lambda LambdaUpda
 	return result
 }
 
-func (m *Manager) recordHistory(ctx context.Context, tx *gorm.DB, instance *Instance) error {
-	logger := m.Logger.With(
-		zap.String("InstanceID", instance.ID),
-	)
+type historyRef struct {
+	Instance      *Instance
+	ReferenceTime time.Time
+}
 
-	now := time.Now()
-
-	// insert a History record here
-	if instance.PreviousState != instance.State {
-		if histRes := tx.Create(&History{
-			InstanceID: instance.ID,
-			Timestamp:  now,
-			State:      instance.State,
-		}); histRes.Error != nil {
-			logger.Error("Cannot insert History log",
-				zap.Error(histRes.Error),
-			)
-			return histRes.Error
-		}
+func (m *Manager) logHistory(tx *gorm.DB, ref historyRef) error {
+	if histRes := tx.Create(&History{
+		InstanceID: ref.Instance.ID,
+		Timestamp:  ref.ReferenceTime,
+		State:      ref.Instance.State,
+	}); histRes.Error != nil {
+		return histRes.Error
 	}
-
-	if instance.PreviousState != StateStopping || instance.State != StateStopped {
-		return nil
-	}
-
-	// If the State becomes "StateStopped", look back to find the last
-	// timestamp when it was "StateRunning". Then SubscriptionManager
-	// should be able to determine how much usage we need to record (if any)
-	var previousLog History
-	pastRes := tx.Order("histories.timestamp desc").
-		Limit(1).
-		Where("instance_id = ? AND timestamp < ? AND state IN ?",
-			instance.ID,
-			now,
-			[]string{StateRunning, StateStopped},
-		).
-		First(&previousLog)
-
-	// ErrRecordNotFound is an error, and if current State is "Stopped",
-	// there must exists a corresponding "Start" history
-	if pastRes.Error != nil {
-		logger.Error("Cannot look back History logs to determine usage",
-			zap.Error(pastRes.Error),
-		)
-		return pastRes.Error
-	}
-	if previousLog.State != StateRunning {
-		logger.Error("Unable to find corresponding previous Start history log",
-			zap.Error(pastRes.Error),
-		)
-		return fmt.Errorf("Previous History log is inconsistent with current State (expected: Running, actual: %s", previousLog.State)
-	}
-
-	opt := subscription.RecordUsageOption{
-		CustomerID:     instance.CustomerID,
-		SubscriptionID: instance.SubscriptionID,
-
-		CurrentlyRunning:  false,
-		PreviousStartDate: &previousLog.Timestamp,
-		CurrentEndDate:    &now,
-		Primary:           true,
-	}
-	if err := m.SubscriptionManager.RecordUsage(ctx, opt); err != nil {
-		logger.Error("Unable to record usage in SubscriptionManager",
-			zap.Error(err),
-		)
-		return err
-	}
-
 	return nil
+}
+
+func (m *Manager) listSubscriptionIDs(ctx context.Context, instanceIDs []string) ([]string, error) {
+	if len(instanceIDs) == 0 {
+		return nil, nil
+	}
+	subIDs := make([]string, 0, 2)
+	result := m.DB.WithContext(ctx).
+		Model(&Instance{}).
+		Where("id IN ?", instanceIDs).
+		Select("subscription_id").
+		Find(&subIDs)
+
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return subIDs, nil
 }

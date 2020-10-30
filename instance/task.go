@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/golang/protobuf/ptypes"
 	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
@@ -211,6 +212,44 @@ func (t *Task) handleProvisionReply(ctx context.Context, reply *protocol.Provisi
 	}
 }
 
+func (t *Task) handleHeartbeat(ctx context.Context, hb *protocol.Heartbeat) {
+	if len(hb.GetRunningInstanceIDs()) == 0 {
+		return
+	}
+	referenceTime, err := ptypes.Timestamp(hb.GetTimestamp())
+	if err != nil {
+		t.Logger.Error("Cannot parse heartbeat timestamp",
+			zap.Error(err),
+		)
+		return
+	}
+	logger := t.Logger.With(
+		zap.Time("HeartbeatTime", referenceTime),
+		zap.Strings("InstanceIDs", hb.GetRunningInstanceIDs()),
+	)
+
+	subIDs, err := t.InstanceManager.listSubscriptionIDs(ctx, hb.GetRunningInstanceIDs())
+	if err != nil {
+		logger.Error("Unable to get subscription id list for usage aggregation",
+			zap.Error(err),
+		)
+	}
+
+	aggregationOpts := make([]subscription.PrimaryUsageOption, 0, 2)
+	for _, subID := range subIDs {
+		aggregationOpts = append(aggregationOpts, subscription.PrimaryUsageOption{
+			SubscriptionID: subID,
+			ReferenceTime:  referenceTime,
+			Amount:         int64(spec.HeartbeatInterval.Seconds()),
+		})
+	}
+	if err := t.SubscriptionManager.IncrementPrimaryUsage(ctx, aggregationOpts); err != nil {
+		logger.Error("Unable to increment aggregate usage to SubscriptionManager",
+			zap.Error(err),
+		)
+	}
+}
+
 func (t *Task) HandleReply(ctx context.Context) error {
 	cChan, err := t.Consumer.ReceiveControlReply(ctx)
 	if err != nil {
@@ -219,6 +258,10 @@ func (t *Task) HandleReply(ctx context.Context) error {
 	pChan, err := t.Consumer.ReceiveProvisionReply(ctx)
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot get provision reply channel")
+	}
+	hChan, err := t.Consumer.ReceiveHeartbeat(ctx, "instanceTask")
+	if err != nil {
+		return extErrors.Wrap(err, "Cannot get heartbeat channel")
 	}
 	go func() {
 		for {
@@ -237,6 +280,16 @@ func (t *Task) HandleReply(ctx context.Context) error {
 				return
 			case reply := <-pChan:
 				t.handleProvisionReply(ctx, reply)
+			}
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case heartbeat := <-hChan:
+				t.handleHeartbeat(ctx, heartbeat)
 			}
 		}
 	}()

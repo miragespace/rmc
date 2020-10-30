@@ -3,6 +3,8 @@ package protocol;
 
 option go_package = "github.com/zllovesuki/rmc/spec/protocol";
 
+import "google/protobuf/timestamp.proto";
+
 message Host {
     string Name = 1;
     int64 Running = 2;
@@ -12,4 +14,7 @@ message Host {
 
 message Heartbeat {
     Host Host = 1;
+    google.protobuf.Timestamp Timestamp = 2;
+
+    repeated string RunningInstanceIDs = 10;
 }

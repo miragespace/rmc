@@ -94,7 +94,7 @@ func main() {
 		)
 	}
 
-	amqpBroker, err := broker.NewAMQPBroker(os.Getenv("AMQP_URI"))
+	amqpBroker, err := broker.NewAMQPBroker(logger, os.Getenv("AMQP_URI"))
 	if err != nil {
 		log.Fatal("Cannot connect to Broker",
 			zap.Error(err),

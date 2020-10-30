@@ -201,7 +201,7 @@ func (p *Plan) createPartsOnStripe(ctx context.Context, s *client.API) error {
 		UsageType:      stripe.String("licensed"),
 	}
 	variableRecurring := &stripe.PriceRecurringParams{
-		AggregateUsage: stripe.String("sum"),
+		AggregateUsage: stripe.String(string(stripe.PriceRecurringAggregateUsageLastDuringPeriod)),
 		Interval:       stripe.String(p.Interval),
 		IntervalCount:  stripe.Int64(1),
 		UsageType:      stripe.String("metered"),
@@ -245,13 +245,22 @@ func (p *Plan) createPartsOnStripe(ctx context.Context, s *client.API) error {
 	return nil
 }
 
-func (p *Plan) lookupPartID(lookupKey string) string {
+func (p *Plan) lookupPartByLookupKey(lookupKey string) Part {
 	for _, part := range p.Parts {
 		if lookupKey == p.lookupKey(part) {
-			return part.ID
+			return part
 		}
 	}
-	return ""
+	return Part{}
+}
+
+func (p *Plan) lookupPartByID(partID string) Part {
+	for _, part := range p.Parts {
+		if part.ID == partID {
+			return part
+		}
+	}
+	return Part{}
 }
 
 // GetStripeSubscriptionParams will generate SubscriptionParams for used with Stripe from a Plan

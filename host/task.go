@@ -3,7 +3,10 @@ package host
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/golang/protobuf/ptypes"
+	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
 
@@ -42,6 +45,20 @@ func (t *Task) handleHeartbeat(ctx context.Context, hChan <-chan *protocol.Heart
 		case <-ctx.Done():
 			return
 		case hReply := <-hChan:
+			timestamp, err := ptypes.Timestamp(hReply.GetTimestamp())
+			if err != nil {
+				t.Logger.Error("Cannot parse heartbeat timestamp",
+					zap.Error(err),
+				)
+				continue
+			}
+			if time.Now().Sub(timestamp) > 2*spec.HeartbeatInterval {
+				// discard old heartbeats
+				t.Logger.Info("Discarding outdated heartbeat",
+					zap.Time("HeartbeatTime", timestamp),
+				)
+				continue
+			}
 			if err := t.HostManager.ProcessHeartbeat(ctx, hReply); err != nil {
 				t.Logger.Error("Cannot process heartbeat",
 					zap.Error(err),
@@ -52,7 +69,7 @@ func (t *Task) handleHeartbeat(ctx context.Context, hChan <-chan *protocol.Heart
 }
 
 func (t *Task) HandleReply(ctx context.Context) error {
-	hChan, err := t.Consumer.ReceiveHeartbeat(ctx)
+	hChan, err := t.Consumer.ReceiveHeartbeat(ctx, "hostTask")
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot get heartbeat channel")
 	}

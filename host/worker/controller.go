@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/golang/protobuf/ptypes"
 	"github.com/zllovesuki/rmc/host"
 	"github.com/zllovesuki/rmc/host/docker"
 	"github.com/zllovesuki/rmc/spec"
@@ -219,6 +220,13 @@ func (c *Controller) sendHeartbeat(ctx context.Context) {
 					zap.Error(err),
 				)
 			}
+			timestamp, err := ptypes.TimestampProto(time.Now())
+			if err != nil {
+				c.Logger.Error("Cannot convert time to protobuf timestamp",
+					zap.Error(err),
+				)
+				continue
+			}
 			c.Producer.SendHeartbeat(&protocol.Heartbeat{
 				Host: &protocol.Host{
 					Name:     c.Host.Name,
@@ -226,6 +234,8 @@ func (c *Controller) sendHeartbeat(ctx context.Context) {
 					Stopped:  stats.Stopped,
 					Capacity: c.Host.Capacity,
 				},
+				Timestamp:          timestamp,
+				RunningInstanceIDs: stats.RunningInstances,
 			})
 		}
 	}

@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -254,7 +255,7 @@ func (m *Manager) CreateSubscriptionFromPlan(ctx context.Context, opt CreateFrom
 	return sub, nil
 }
 
-func (m *Manager) SynchronizeSubscriptionStatus(ctx context.Context, subscriptionId string) error {
+func (m *Manager) SynchronizeSubscriptionStatus(ctx context.Context, subscriptionID string) error {
 	subscriptionParams := &stripe.SubscriptionParams{
 		Params: stripe.Params{
 			Context: ctx,
@@ -262,174 +263,137 @@ func (m *Manager) SynchronizeSubscriptionStatus(ctx context.Context, subscriptio
 	}
 	subscriptionParams.AddExpand("latest_invoice.payment_intent")
 	subscriptionParams.AddExpand("pending_setup_intent")
-	sub, err := m.StripeClient.Subscriptions.Get(subscriptionId, subscriptionParams)
+	sub, err := m.StripeClient.Subscriptions.Get(subscriptionID, subscriptionParams)
 	if err != nil {
 		return extErrors.Wrap(err, "Unable to fetch from Stripe to synchronize status")
 	}
 	// TODO: also synchronize cancelled/overdue
+	// TODO: also synchronize billing start/end
 	if sub.Status == stripe.SubscriptionStatusActive && sub.PendingSetupIntent == nil {
-		result := m.DB.WithContext(ctx).Model(&Subscription{}).Where("id = ?", subscriptionId).Update("state", StateActive)
+		result := m.DB.WithContext(ctx).Model(&Subscription{}).Where("id = ?", subscriptionID).Update("state", StateActive)
 		if result.Error != nil {
-			return extErrors.Wrap(result.Error, "Unable to mark subscription as cancelled in database")
+			return extErrors.Wrap(result.Error, "Unable to mark subscription as active in database")
 		}
 	}
 	return nil
 }
 
-func (m *Manager) CancelSubscription(ctx context.Context, subscriptionId string) error {
+func (m *Manager) CancelSubscription(ctx context.Context, subscriptionID string) error {
 	updateParams := &stripe.SubscriptionParams{
 		Params: stripe.Params{
 			Context: ctx,
 		},
 		CancelAtPeriodEnd: stripe.Bool(true),
 	}
-	sub, err := m.StripeClient.Subscriptions.Update(subscriptionId, updateParams)
+	sub, err := m.StripeClient.Subscriptions.Update(subscriptionID, updateParams)
 	if err != nil {
 		return extErrors.Wrap(err, "Unable to cancel subscription on Stripe")
 	}
 	if sub.CancelAtPeriodEnd != true {
 		return fmt.Errorf("Stripe did not mark subscription as cancel at end of period")
 	}
-	result := m.DB.WithContext(ctx).Model(&Subscription{}).Where("id = ?", subscriptionId).Update("state", StateInactive)
+	result := m.DB.WithContext(ctx).Model(&Subscription{}).Where("id = ?", subscriptionID).Update("state", StateInactive)
 	if result.Error != nil {
-		return extErrors.Wrap(result.Error, "Unable to mark subscription as cancelled in database")
+		return extErrors.Wrap(result.Error, "Unable to mark subscription as inactive in database")
 	}
 	return nil
 }
 
-// RecordUsageOption specifies the parameters of how to calculate usage
-// See PDF file to understand why these parameters are needed
-type RecordUsageOption struct {
-	CustomerID     string
-	SubscriptionID string
+// TODO: support non-primary increment
 
-	CurrentlyRunning  bool
-	PreviousStartDate *time.Time
-	CurrentEndDate    *time.Time
-	Primary           bool
+type newUsageOption struct {
+	Amount  int64
+	Primary bool
 }
 
-// RecordUsage will insert an usage record, and submit a record to Stripe for billing
-// See PDF file to understand all cases
-func (m *Manager) RecordUsage(ctx context.Context, opt RecordUsageOption) error {
-	// logger := m.Logger.With(
-	// 	zap.String("CustomerID", opt.CustomerID),
-	// 	zap.String("SubscriptionID", opt.SubscriptionID),
-	// )
-
-	// For now, we only care about primary subscription's variable usage
-	if !opt.Primary {
-		return nil
-	}
-
-	sub, err := m.Get(ctx, GetOption{
-		CustomerID:     opt.CustomerID,
-		SubscriptionID: opt.SubscriptionID,
-	})
-	if err != nil {
-		return extErrors.Wrap(err, "Unable to lookup corresponding Subscription")
-	}
-
-	plan, ok := m.GetDefinedPlanByID(sub.PlanID)
-	if !ok {
-		return fmt.Errorf("Unable to find PlanID %s in defined plans", sub.PlanID)
-	}
-	// Find the subscriptionItemId where the part is variable
-	var varialePart Part
-	for _, part := range plan.Parts {
-		if part.Primary && part.Type == VariableType {
-			varialePart = part
+func (m *Manager) newUsage(tx *gorm.DB, sub *Subscription, opt newUsageOption) error {
+	var subscriptionItemID string
+	for _, items := range sub.SubscriptionItems {
+		if items.Type == VariableType {
+			subscriptionItemID = items.ID
 		}
 	}
-
-	// the actual accounting can start now
 	currentBillingStart := sub.SubscriptionItems[0].PeriodStart
 	currentBillingEnd := sub.SubscriptionItems[0].PeriodEnd
-	var actualStartDate time.Time
-	var actualEndDate time.Time
-
-	// Case 2, 4, and 5 are subjected to reporting window size
-	// TODO: calculate the optimal window size
-	// TODO: race condition between user action and background worker
-	if opt.CurrentEndDate == nil {
-		if opt.PreviousStartDate != nil && opt.PreviousStartDate.After(currentBillingStart) {
-			// Case 2: User start, but no end date
-			// TODO: double check with the diagram
-			actualStartDate = *opt.PreviousStartDate
-			actualEndDate = currentBillingEnd
-			panic("not implemented")
-		}
-		if opt.CurrentlyRunning {
-			// Case 4: No events for the current period but Running
-			actualStartDate = currentBillingStart
-			actualEndDate = currentBillingEnd
-			panic("not implemented")
-		}
-		// Case 5: Instance is stopped for the current period
-		return nil
-	}
-
-	// TODO: verify the math
-	if opt.CurrentEndDate.After(currentBillingEnd) || opt.CurrentEndDate.Before(currentBillingStart) {
-		return nil
-	}
-
-	if opt.CurrentlyRunning {
-		return nil
-	}
-
-	if opt.PreviousStartDate.After(currentBillingStart) {
-		// Case 1: Simple case
-		actualStartDate = *opt.PreviousStartDate
-		actualEndDate = *opt.CurrentEndDate
-	} else {
-		// Case 3: No Running event for current period
-		actualStartDate = currentBillingStart
-		actualEndDate = *opt.CurrentEndDate
-	}
-
-	duration := actualEndDate.Sub(actualStartDate)
-
-	var subscriptionItemID string
-	for _, item := range sub.SubscriptionItems {
-		if item.PartID == varialePart.ID {
-			subscriptionItemID = item.ID
-		}
-	}
-
-	// TODO: figure out how to do ceiling instead of round up
-	var quantity int64
-	switch varialePart.Period {
-	case "minute":
-		quantity = int64(duration.Round(time.Minute).Minutes())
-	default:
-		return fmt.Errorf("Unsupported period: %s", varialePart.Period)
-	}
-
 	usage := &Usage{
 		ID:                 shortuuid.New(),
-		Unit:               "second", // for future use: allow for "per use"
-		Amount:             int64(duration.Seconds()),
-		StartDate:          actualStartDate,
-		EndDate:            *opt.CurrentEndDate,
+		Amount:             opt.Amount,
+		StartDate:          currentBillingStart,
+		EndDate:            currentBillingEnd,
+		IsPrimary:          opt.Primary,
 		SubscriptionID:     sub.ID,
 		SubscriptionItemID: subscriptionItemID,
 	}
+	return tx.Create(&usage).Error
+}
 
-	if saveRes := m.DB.WithContext(ctx).Create(&usage); saveRes.Error != nil {
-		return extErrors.Wrap(saveRes.Error, "Unable to record usage to database")
+// PrimaryUsageOption specifies which primary subscription to increment and by how much
+type PrimaryUsageOption struct {
+	SubscriptionID string
+	ReferenceTime  time.Time
+	Amount         int64
+}
+
+// IncrementPrimaryUsage will increment the primary usage record for billing
+func (m *Manager) IncrementPrimaryUsage(ctx context.Context, opts []PrimaryUsageOption) error {
+	if len(opts) == 0 {
+		return nil
 	}
+	return m.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, aggr := range opts {
+			// try updating current period usage record
+			res := tx.Model(&Usage{}).
+				Where("subscription_id = ?", aggr.SubscriptionID).
+				Where("start_date < ? AND ? <= end_date", aggr.ReferenceTime, aggr.ReferenceTime).
+				Where("is_primary = ?", true).
+				UpdateColumn("amount", gorm.Expr("amount + ?", aggr.Amount))
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected > 1 {
+				m.Logger.Error("Primary usage update affected more than 1 row",
+					zap.String("SubscriptionID", aggr.SubscriptionID),
+				)
+				// fail through
+			}
+			if res.RowsAffected > 0 {
+				continue
+			}
+			// new usage record
+			var sub Subscription
+			lookupRes := tx.Preload("SubscriptionItems").
+				Where("id = ?", aggr.SubscriptionID).
+				First(&sub)
+			if lookupRes.Error != nil {
+				return lookupRes.Error
+			}
+			if err := m.newUsage(tx, &sub, newUsageOption{
+				Amount:  aggr.Amount,
+				Primary: true,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, &sql.TxOptions{
+		Isolation: sql.LevelSerializable,
+	})
+}
 
-	params := &stripe.UsageRecordParams{
-		SubscriptionItem: stripe.String(subscriptionItemID),
-		Quantity:         stripe.Int64(quantity),
-		Timestamp:        stripe.Int64(opt.CurrentEndDate.Unix()),
-		Action:           stripe.String(string(stripe.UsageRecordActionSet)),
-	}
+type SecondaryUsageOption struct {
+	SubscriptionID string
+	PartID         string
+	ReferenceTime  time.Time
+	Amount         int64
+}
 
-	if _, err := m.StripeClient.UsageRecords.New(params); err != nil {
-		return extErrors.Wrap(err, "Unable to record usage on Stripe")
-	}
-
+func (m *Manager) IncrementSecondaryUsage(ctx context.Context, opts []SecondaryUsageOption) error {
+	// find the item with given part id, then increment that usage
+	// should be something like this:
+	// res := tx.Model(&Usage{}).
+	// 	Where("subscription_item_id = ?", subscriptionItemID). // notice it is using item id, not subscription id
+	// 	Where("start_date < ? AND ? <= end_date", aggr.ReferenceTime, aggr.ReferenceTime).
+	// 	Where("is_primary = ?", false). // notice it is is_primary = false
+	// 	UpdateColumn("amount", gorm.Expr("amount + ?", aggr.Amount))
 	return nil
 }

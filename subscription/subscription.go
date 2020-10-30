@@ -34,18 +34,20 @@ type SubscriptionItem struct {
 	ID             string    `json:"id" gorm:"primaryKey"`                 // Corresponds to Stripe's Subscription Item ID
 	PartID         string    `json:"partId" gorm:"not null"`               // Corrsponds to Stripe's Price ID and Plan.[]Part.ID
 	SubscriptionID string    `json:"subscriptionId" gorm:"index;not null"` // Corresponds to the parent subscription ID that this item belongs to
-	PeriodStart    time.Time `json:"periodStart"`                          // Used for accounting purposes, this signals when the RunningUsage stars
-	PeriodEnd      time.Time `json:"periodEnd"`                            // Used for accounting purposes, this signals when the RunningUsage end
+	PeriodStart    time.Time `json:"periodStart" gorm:"not null"`          // Used for accounting purposes, this signals when the RunningUsage stars
+	PeriodEnd      time.Time `json:"periodEnd" gorm:"not null"`            // Used for accounting purposes, this signals when the RunningUsage end
+	Type           PartType  `json:"type" gorm:"not null"`
 }
 
+// Usage describes the aggregate usage amount within a billing period
 type Usage struct {
 	ID                 string           `json:"-" gorm:"primaryKey"`
-	StartDate          time.Time        `json:"startDate"`
-	EndDate            time.Time        `json:"endDate"`
-	Unit               string           `json:"unit"`
-	Amount             int64            `json:"amount"`
-	SubscriptionID     string           `json:"-" gorm:"index;not null"`
+	SubscriptionID     string           `json:"-" gorm:"index:idx_usages_accounting;not null"`
 	SubscriptionItemID string           `json:"-" gorm:"index;not null"`
+	StartDate          time.Time        `json:"startDate" gorm:"index:idx_usages_accounting"`
+	EndDate            time.Time        `json:"endDate" gorm:"index:idx_usages_accounting"`
+	Amount             int64            `json:"amount"`
+	IsPrimary          bool             `json:"isPrimary" gorm:"not null;default:false"`
 	Subscription       Subscription     `json:"subscription"`
 	SubscriptionItem   SubscriptionItem `json:"subscriptionItem"`
 }
@@ -54,16 +56,17 @@ type Usage struct {
 func (s *Subscription) FromStripeResponse(sub *stripe.Subscription, plan Plan) error {
 	items := make([]SubscriptionItem, 0, 2)
 	for _, subItem := range sub.Items.Data {
-		partID := plan.lookupPartID(subItem.Price.LookupKey)
-		if partID == "" {
+		part := plan.lookupPartByLookupKey(subItem.Price.LookupKey)
+		if part.ID == "" {
 			return fmt.Errorf("Inconsistent data: no corresponding Price ID")
 		}
 		item := SubscriptionItem{
 			ID:             subItem.ID,
-			PartID:         partID,
+			PartID:         part.ID,
 			SubscriptionID: sub.ID,
 			PeriodStart:    time.Unix(sub.CurrentPeriodStart, 0), // TODO: revisit this
 			PeriodEnd:      time.Unix(sub.CurrentPeriodEnd, 0),   // TODO: revisit this
+			Type:           part.Type,
 		}
 		items = append(items, item)
 	}

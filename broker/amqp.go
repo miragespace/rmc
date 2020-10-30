@@ -2,15 +2,14 @@ package broker
 
 import (
 	"context"
-	"strconv"
 	"time"
 
-	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
 
 	extErrors "github.com/pkg/errors"
 	"github.com/streadway/amqp"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -20,12 +19,8 @@ var _ broker.Consumer = &AMQPBroker{}
 const (
 	instanceControlExchange   string = "host_control_exchange"
 	instanceProvisionExchange        = "host_provision_exchange"
-	hostReplyRoutingKey              = "request_reply"
 	hostHeartbeatExchange            = "heartbeat_exchange"
-)
-
-var (
-	heartbeatTTL = strconv.FormatInt(int64(spec.HeartbeatInterval/time.Millisecond), 10)
+	hostReplyRoutingKey              = "request_reply"
 )
 
 // AMQPBroker describes a message broker via RabbitMQ
@@ -33,16 +28,18 @@ type AMQPBroker struct {
 	connection      *amqp.Connection
 	producerChannel *amqp.Channel
 	consumerChannel *amqp.Channel
+	logger          *zap.Logger
 }
 
 // NewAMQPBroker returns a Message Broker over RabbitMQ
-func NewAMQPBroker(amqpURI string) (*AMQPBroker, error) {
+func NewAMQPBroker(logger *zap.Logger, amqpURI string) (*AMQPBroker, error) {
 	amqpConn, err := amqp.Dial(amqpURI)
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot connect to Message Broker")
 	}
 	return &AMQPBroker{
 		connection: amqpConn,
+		logger:     logger,
 	}, nil
 }
 
@@ -57,6 +54,7 @@ func (a *AMQPBroker) Producer() (broker.Producer, error) {
 	}
 	return &AMQPBroker{
 		producerChannel: producerChannel,
+		logger:          a.logger.With(zap.String("Role", "Producer")),
 	}, nil
 }
 
@@ -71,6 +69,7 @@ func (a *AMQPBroker) Consumer() (broker.Consumer, error) {
 	}
 	return &AMQPBroker{
 		consumerChannel: consumerChannel,
+		logger:          a.logger.With(zap.String("Role", "Consumer")),
 	}, nil
 }
 
@@ -116,24 +115,10 @@ func (a *AMQPBroker) publishViaRoutingKey(exchange, routingKey string, body []by
 		false,
 		false,
 		amqp.Publishing{
-			Timestamp:   time.Now(),
-			ContentType: "application/x-protobuf",
-			Body:        body,
-		},
-	)
-}
-
-func (a *AMQPBroker) publishViaRoutingKeyTTL(exchange, routingKey, ttlMs string, body []byte) error {
-	return a.producerChannel.Publish(
-		exchange,
-		routingKey,
-		false,
-		false,
-		amqp.Publishing{
-			Expiration:  ttlMs,
-			Timestamp:   time.Now(),
-			ContentType: "application/x-protobuf",
-			Body:        body,
+			DeliveryMode: amqp.Persistent,
+			Timestamp:    time.Now(),
+			ContentType:  "application/x-protobuf",
+			Body:         body,
 		},
 	)
 }
@@ -192,7 +177,7 @@ func (a *AMQPBroker) SendHeartbeat(b *protocol.Heartbeat) error {
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot encode message into bytes")
 	}
-	if err := a.publishViaRoutingKeyTTL(hostHeartbeatExchange, "heartbeat", heartbeatTTL, protoBytes); err != nil {
+	if err := a.publishViaRoutingKey(hostHeartbeatExchange, "heartbeat", protoBytes); err != nil {
 		return extErrors.Wrap(err, "Cannot publish heartbeats")
 	}
 	return nil
@@ -250,7 +235,11 @@ func (a *AMQPBroker) ReceiveControlRequest(ctx context.Context, hostIdentifier s
 					continue
 				}
 				rChan <- &req
-				d.Ack(false)
+				if err := d.Ack(false); err != nil {
+					a.logger.Error("Unable to ack control request message",
+						zap.Error(err),
+					)
+				}
 			}
 		}
 	}()
@@ -277,7 +266,11 @@ func (a *AMQPBroker) ReceiveProvisionRequest(ctx context.Context, hostIdentifier
 					continue
 				}
 				rChan <- &req
-				d.Ack(false)
+				if err := d.Ack(false); err != nil {
+					a.logger.Error("Unable to ack provision request message",
+						zap.Error(err),
+					)
+				}
 			}
 		}
 	}()
@@ -304,7 +297,11 @@ func (a *AMQPBroker) ReceiveControlReply(ctx context.Context) (<-chan *protocol.
 					continue
 				}
 				rChan <- &req
-				d.Ack(false)
+				if err := d.Ack(false); err != nil {
+					a.logger.Error("Unable to ack control reply message",
+						zap.Error(err),
+					)
+				}
 			}
 		}
 	}()
@@ -331,7 +328,11 @@ func (a *AMQPBroker) ReceiveProvisionReply(ctx context.Context) (<-chan *protoco
 					continue
 				}
 				rChan <- &req
-				d.Ack(false)
+				if err := d.Ack(false); err != nil {
+					a.logger.Error("Unable to ack provision reply message",
+						zap.Error(err),
+					)
+				}
 			}
 		}
 	}()
@@ -339,8 +340,8 @@ func (a *AMQPBroker) ReceiveProvisionReply(ctx context.Context) (<-chan *protoco
 }
 
 // ReceiveHeartbeat will consumer heartbeats from hosts
-func (a *AMQPBroker) ReceiveHeartbeat(ctx context.Context) (<-chan *protocol.Heartbeat, error) {
-	name := "process_" + hostHeartbeatExchange
+func (a *AMQPBroker) ReceiveHeartbeat(ctx context.Context, processor string) (<-chan *protocol.Heartbeat, error) {
+	name := "process_" + hostHeartbeatExchange + "_" + processor
 	msgChan, err := a.getMsgChannel(name, hostHeartbeatExchange, "#")
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot setup consumer")
@@ -358,7 +359,11 @@ func (a *AMQPBroker) ReceiveHeartbeat(ctx context.Context) (<-chan *protocol.Hea
 					continue
 				}
 				hChan <- &req
-				d.Ack(false)
+				if err := d.Ack(false); err != nil {
+					a.logger.Error("Unable to ack heartbeat message",
+						zap.Error(err),
+					)
+				}
 			}
 		}
 	}()

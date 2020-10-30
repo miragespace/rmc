@@ -23,6 +23,8 @@ import (
 
 const (
 	managedInstancePrefix = "rmc-instance-"
+	dockerPrefix          = "/" + managedInstancePrefix
+	dockerPrefixLen       = len(dockerPrefix)
 )
 
 type Options struct {
@@ -186,8 +188,9 @@ func (c *Client) StartInstance(ctx context.Context, p *protocol.Instance) error 
 }
 
 type Stats struct {
-	Running int64
-	Stopped int64
+	Running          int64
+	Stopped          int64
+	RunningInstances []string
 }
 
 func (c *Client) StatsInstances(ctx context.Context) (stats Stats, err error) {
@@ -198,11 +201,16 @@ func (c *Client) StatsInstances(ctx context.Context) (stats Stats, err error) {
 		return
 	}
 
+	runningInstances := make([]string, 0, 2)
+
 	for _, container := range containers {
 		for _, name := range container.Names {
-			if strings.HasPrefix(name, "/"+managedInstancePrefix) {
+			if strings.HasPrefix(name, dockerPrefix) {
 				switch container.State {
-				case "running", "removing", "restarting":
+				case "running":
+					runningInstances = append(runningInstances, name[dockerPrefixLen:])
+					stats.Running++
+				case "removing", "restarting":
 					stats.Running++
 				default:
 					stats.Stopped++
@@ -210,6 +218,8 @@ func (c *Client) StatsInstances(ctx context.Context) (stats Stats, err error) {
 			}
 		}
 	}
+
+	stats.RunningInstances = runningInstances
 
 	return
 }
