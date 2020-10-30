@@ -1,10 +1,7 @@
 package subscription
 
 import (
-	"fmt"
 	"time"
-
-	"github.com/stripe/stripe-go/v72"
 )
 
 // State is the custom to define the current state of a subscription
@@ -47,54 +44,4 @@ type Usage struct {
 	StartDate          time.Time        `json:"startDate"`
 	EndDate            time.Time        `json:"endDate" gorm:"primaryKey"`
 	AggregateTotal     int64            `json:"aggregateTotal"`
-}
-
-func (s *Subscription) findSubscriptionItemByPartID(partID string) *SubscriptionItem {
-	if s == nil || len(s.SubscriptionItems) == 0 {
-		return nil
-	}
-	for k, item := range s.SubscriptionItems {
-		if item.PartID == partID {
-			return &s.SubscriptionItems[k]
-		}
-	}
-	return nil
-}
-
-// FromStripeResponse will construct a local copy of Subscription from Stripe's response of subscription object
-func (s *Subscription) FromStripeResponse(sub *stripe.Subscription, plan *Plan) error {
-	items := make([]SubscriptionItem, 0, 2)
-	for _, subItem := range sub.Items.Data {
-		part := plan.lookupPartByLookupKey(subItem.Price.LookupKey)
-		if part.ID == "" {
-			return fmt.Errorf("Inconsistent data: no corresponding Price ID")
-		}
-		item := SubscriptionItem{
-			ID:             subItem.ID,
-			PartID:         part.ID,
-			SubscriptionID: sub.ID,
-			PeriodStart:    time.Unix(sub.CurrentPeriodStart, 0), // TODO: revisit this
-			PeriodEnd:      time.Unix(sub.CurrentPeriodEnd, 0),   // TODO: revisit this
-			Part:           part,
-		}
-		items = append(items, item)
-	}
-
-	var subState State
-	if sub.Status == stripe.SubscriptionStatusActive && sub.PendingSetupIntent == nil {
-		subState = StateActive
-	} else {
-		subState = StatePending
-	}
-
-	*s = Subscription{
-		ID:                sub.ID,
-		PlanID:            plan.ID,
-		CustomerID:        sub.Customer.ID,
-		State:             subState,
-		SubscriptionItems: items,
-		Plan:              *plan,
-	}
-
-	return nil
 }

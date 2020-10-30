@@ -100,7 +100,6 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logger = logger.With(zap.String("PlanID", req.PlanID))
-	fmt.Printf("%+v\n", plan)
 
 	opt := CreateFromPlanOption{
 		CustomerID: claims.ID,
@@ -118,7 +117,7 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var subscription Subscription
-	if err := subscription.FromStripeResponse(sub, plan); err != nil {
+	if err := subscription.fromStripeResponse(sub, plan); err != nil {
 		logger.Error("Unable to construct Subscription from Stripe response",
 			zap.Error(err),
 		)
@@ -224,14 +223,15 @@ func (s *Service) getSubscriptionUsage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) createPlans(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	plans := make([]*Plan, 0, 1)
+	plans := make([]Plan, 0, 1)
 
 	if err := json.NewDecoder(r.Body).Decode(&plans); err != nil {
 		resp.WriteError(w, r, resp.ErrInvalidJson())
 		return
 	}
 
-	if err := s.SubscriptionManager.CreatePlans(ctx, plans); err != nil {
+	err := s.SubscriptionManager.CreatePlans(ctx, plans)
+	if err != nil {
 		s.Logger.Error("Unable to create plans",
 			zap.Error(err),
 		)

@@ -217,7 +217,7 @@ func (m *Manager) CreateSubscriptionFromPlan(ctx context.Context, opt CreateFrom
 		return nil, fmt.Errorf("SetupOptions.Plan needs to be a synchronized Plan")
 	}
 
-	subscriptionParams := opt.Plan.GetStripeSubscriptionParams(ctx, opt.CustomerID)
+	subscriptionParams := opt.Plan.toStripeSubscriptionParams(ctx, opt.CustomerID)
 	subscriptionParams.AddExpand("latest_invoice.payment_intent")
 	subscriptionParams.AddExpand("pending_setup_intent")
 
@@ -272,6 +272,38 @@ func (m *Manager) CancelSubscription(ctx context.Context, subscriptionID string)
 		return extErrors.Wrap(result.Error, "Unable to mark subscription as inactive in database")
 	}
 	return nil
+}
+
+func (m *Manager) CreatePlans(ctx context.Context, plans []Plan) error {
+	for k := range plans {
+		if err := plans[k].createPlanOnStripe(ctx, m.StripeClient); err != nil {
+			return err
+		}
+	}
+	if createRes := m.DB.WithContext(ctx).Create(&plans); createRes.Error != nil {
+		return createRes.Error
+	}
+	return nil
+}
+
+func (m *Manager) ListPlans(ctx context.Context) ([]Plan, error) {
+	plans := make([]Plan, 0, 1)
+	if lookupRes := m.DB.WithContext(ctx).
+		Preload("Parts").
+		Find(&plans); lookupRes.Error != nil {
+		return nil, lookupRes.Error
+	}
+	return plans, nil
+}
+
+func (m *Manager) GetPlan(ctx context.Context, planID string) (*Plan, error) {
+	var plan Plan
+	if lookupRes := m.DB.WithContext(ctx).
+		Preload("Parts").
+		First(&plan, "id = ?", planID); lookupRes.Error != nil {
+		return nil, lookupRes.Error
+	}
+	return &plan, nil
 }
 
 // TODO: support non-primary increment
