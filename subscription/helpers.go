@@ -49,8 +49,6 @@ func (s *Subscription) fromStripeResponse(sub *stripe.Subscription, plan *Plan) 
 			ID:             subItem.ID,
 			PartID:         part.ID,
 			SubscriptionID: sub.ID,
-			PeriodStart:    time.Unix(sub.CurrentPeriodStart, 0), // TODO: revisit this
-			PeriodEnd:      time.Unix(sub.CurrentPeriodEnd, 0),   // TODO: revisit this
 			Part:           *part,
 		}
 		items = append(items, item)
@@ -69,6 +67,8 @@ func (s *Subscription) fromStripeResponse(sub *stripe.Subscription, plan *Plan) 
 		CustomerID:        sub.Customer.ID,
 		State:             subState,
 		SubscriptionItems: items,
+		PeriodStart:       time.Unix(sub.CurrentPeriodStart, 0),
+		PeriodEnd:         time.Unix(sub.CurrentPeriodEnd, 0),
 		Plan:              *plan,
 	}
 

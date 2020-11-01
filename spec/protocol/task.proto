@@ -12,9 +12,10 @@ message SubscriptionTask {
         Synchronize = 2;
     }
 
-    SubsctiptionFunc Function = 1;
+    string SubscriptionID = 1;
+    string SubscriptionItemID = 2;
 
-    string SubscriptionItemID = 5;
+    SubsctiptionFunc Function = 5;
 }
 
 message Task {

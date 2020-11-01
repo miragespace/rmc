@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"time"
 
 	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/broker"
@@ -52,64 +51,69 @@ func (t *Task) HandleTask(ctx context.Context) error {
 		return extErrors.Wrap(err, "Cannot get subscription task channel")
 	}
 
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case task := <-tChan:
-				if task.GetType() != protocol.Task_Subscription {
-					t.Logger.Error("Received non Subscription task")
-					continue
-				}
-				timestamp := task.GetTimestamp()
-				if timestamp == nil {
-					t.Logger.Error("Received nil Timestamp")
-					continue
-				}
-				subTask := task.GetSubscriptionTask()
-				if subTask == nil {
-					t.Logger.Error("Task has nil SubscriptionTask")
-					continue
-				}
-				subscriptionItemID := subTask.GetSubscriptionItemID()
-				if len(subscriptionItemID) == 0 {
-					t.Logger.Error("Received empty SubscriptionItemID")
-					continue
-				}
-
-				logger := t.Logger.With(zap.String("SubscriptionItemID", subscriptionItemID))
-
-				switch subTask.GetFunction() {
-				case protocol.SubscriptionTask_ReportUsage:
-					if err := t.reportUsage(ctx, task); err != nil {
-						logger.Error("Unable to report usage",
-							zap.Error(err),
-						)
-					}
-				case protocol.SubscriptionTask_Synchronize:
-					if err := t.synchronizePeriod(ctx, task); err != nil {
-						logger.Error("Unable to synchronize with Stripe",
-							zap.Error(err),
-						)
-					}
-				default:
-					logger.Error("SubscriptionTask received unknown Function")
-				}
-			}
-		}
-	}()
+	go t.handle(ctx, tChan)
 
 	return nil
 }
 
-func (t Task) synchronizePeriod(ctx context.Context, pb *protocol.Task) error {
-	return nil
+func (t *Task) handle(ctx context.Context, tChan <-chan *protocol.Task) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case task := <-tChan:
+			if task.GetType() != protocol.Task_Subscription {
+				t.Logger.Error("Received non Subscription task")
+				continue
+			}
+			timestamp := task.GetTimestamp()
+			if timestamp == nil {
+				t.Logger.Error("Received nil Timestamp")
+				continue
+			}
+			subTask := task.GetSubscriptionTask()
+			if subTask == nil {
+				t.Logger.Error("Task has nil SubscriptionTask")
+				continue
+			}
+
+			switch subTask.GetFunction() {
+			case protocol.SubscriptionTask_ReportUsage:
+				if err := t.reportUsage(ctx, task); err != nil {
+					t.Logger.Error("Unable to report usage",
+						zap.Error(err),
+					)
+				}
+			case protocol.SubscriptionTask_Synchronize:
+				if err := t.synchronizePeriod(ctx, task); err != nil {
+					t.Logger.Error("Unable to synchronize period with Stripe",
+						zap.Error(err),
+					)
+				}
+			default:
+				t.Logger.Error("SubscriptionTask received unknown Function")
+			}
+		}
+	}
+}
+
+func (t *Task) synchronizePeriod(ctx context.Context, pb *protocol.Task) error {
+	subscriptionID := pb.GetSubscriptionTask().GetSubscriptionID()
+	if len(subscriptionID) == 0 {
+		return fmt.Errorf("Received empty SubscriptionID")
+	}
+	return t.SubscriptionManager.synchronizeSubscriptionPeriod(ctx, subscriptionID)
 }
 
 func (t *Task) reportUsage(ctx context.Context, pb *protocol.Task) error {
 	subscriptionItemID := pb.GetSubscriptionTask().GetSubscriptionItemID()
-	referenceTime, _ := ptypes.Timestamp(pb.GetTimestamp())
+	if len(subscriptionItemID) == 0 {
+		return fmt.Errorf("Received empty SubscriptionItemID")
+	}
+	referenceTime, err := ptypes.Timestamp(pb.GetTimestamp())
+	if err != nil {
+		return fmt.Errorf("Received invalid Timestamp")
+	}
 
 	u, err := t.SubscriptionManager.getUsageBySubscriptionItemID(ctx, usageLookupOption{
 		SubscriptionItemID: subscriptionItemID,
@@ -146,11 +150,6 @@ func unitConversion(u *Usage) (int64, error) {
 	switch u.SubscriptionItem.Part.Unit {
 	case "minute":
 		quantity = int64(math.Ceil(float64(u.AggregateTotal) / 60))
-		billablePeriod := u.SubscriptionItem.PeriodEnd.Sub(u.SubscriptionItem.PeriodStart)
-		billableMinute := int64(billablePeriod / time.Minute)
-		if quantity > billableMinute+1 {
-			return 0, fmt.Errorf("Usage exceeds billable amount (max: %d, current: %d)", billableMinute, quantity)
-		}
 	default:
 		return 0, fmt.Errorf("Unsupported Unit: %s", u.SubscriptionItem.Part.Unit)
 	}

@@ -253,6 +253,30 @@ func (m *Manager) CreateSubscriptionFromPlan(ctx context.Context, opt CreateFrom
 	return sub, nil
 }
 
+func (m *Manager) synchronizeSubscriptionPeriod(ctx context.Context, subscriptionID string) error {
+	subscriptionParams := &stripe.SubscriptionParams{
+		Params: stripe.Params{
+			Context: ctx,
+		},
+	}
+	sub, err := m.StripeClient.Subscriptions.Get(subscriptionID, subscriptionParams)
+	if err != nil {
+		return extErrors.Wrap(err, "Unable to fetch from Stripe to synchronize billing period")
+	}
+	fmt.Printf("%+v\n", sub)
+	result := m.DB.WithContext(ctx).
+		Model(&Subscription{}).
+		Where("id = ?", subscriptionID).
+		Updates(map[string]interface{}{
+			"period_start": time.Unix(sub.CurrentPeriodStart, 0),
+			"period_end":   time.Unix(sub.CurrentPeriodEnd, 0),
+		})
+	if result.Error != nil {
+		return extErrors.Wrap(result.Error, "Unable to update subscription billing period in database")
+	}
+	return nil
+}
+
 func (m *Manager) synchronizeSubscriptionStatus(ctx context.Context, subscriptionID string) error {
 	subscriptionParams := &stripe.SubscriptionParams{
 		Params: stripe.Params{
@@ -266,9 +290,11 @@ func (m *Manager) synchronizeSubscriptionStatus(ctx context.Context, subscriptio
 		return extErrors.Wrap(err, "Unable to fetch from Stripe to synchronize status")
 	}
 	// TODO: also synchronize cancelled/overdue
-	// TODO: also synchronize billing start/end
 	if sub.Status == stripe.SubscriptionStatusActive && sub.PendingSetupIntent == nil {
-		result := m.DB.WithContext(ctx).Model(&Subscription{}).Where("id = ?", subscriptionID).Update("state", StateActive)
+		result := m.DB.WithContext(ctx).
+			Model(&Subscription{}).
+			Where("id = ?", subscriptionID).
+			Update("state", StateActive)
 		if result.Error != nil {
 			return extErrors.Wrap(result.Error, "Unable to mark subscription as active in database")
 		}
@@ -455,13 +481,15 @@ type usageOption struct {
 	lastError      error
 }
 
+// TODO: break up this giant function
 func (m *Manager) txIncrementOrNew(ctx context.Context, aggr usageOption) error {
 	if aggr.retryCount > 3 {
 		return fmt.Errorf("Transaction retry exceeded: %w", aggr.lastError)
 	}
+
+	var sub Subscription
 	var variableItem *SubscriptionItem
 	err := m.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var sub Subscription
 		lookupRes := tx.Clauses(clause.Locking{Strength: "SHARE"}).
 			Preload("SubscriptionItems").
 			Preload("SubscriptionItems.Part").
@@ -508,6 +536,7 @@ func (m *Manager) txIncrementOrNew(ctx context.Context, aggr usageOption) error 
 		// new usage record
 		return m.newUsage(tx, newUsageOption{
 			Amount:           aggr.Amount,
+			Subscription:     &sub,
 			SubscriptionItem: variableItem,
 		})
 	}, &sql.TxOptions{
@@ -522,12 +551,31 @@ func (m *Manager) txIncrementOrNew(ctx context.Context, aggr usageOption) error 
 				aggr.retryCount++
 				aggr.lastError = err
 				return m.txIncrementOrNew(ctx, aggr)
+			} else if pgErr.Code == "23505" {
+				// PrimaryKey constraint violation
+				// this only happens when PeriodStart/PeriodEnd has not been updated yet
+				timestamp, _ := ptypes.TimestampProto(aggr.ReferenceTime)
+				err := m.Producer.SendTask(spec.SubscriptionTask, &protocol.Task{
+					Timestamp: timestamp,
+					SubscriptionTask: &protocol.SubscriptionTask{
+						Function:       protocol.SubscriptionTask_Synchronize,
+						SubscriptionID: sub.ID,
+					},
+					Type: protocol.Task_Subscription,
+				})
+				if err != nil {
+					m.Logger.Error("Unable to send async task to subscription",
+						zap.Error(err),
+					)
+					return err
+				}
+				return nil
 			}
 		}
 		return err
 	}
 
-	timestamp, _ := ptypes.TimestampProto(time.Now())
+	timestamp, _ := ptypes.TimestampProto(aggr.ReferenceTime)
 	if err := m.Producer.SendTask(spec.SubscriptionTask, &protocol.Task{
 		Timestamp: timestamp,
 		SubscriptionTask: &protocol.SubscriptionTask{
@@ -539,7 +587,7 @@ func (m *Manager) txIncrementOrNew(ctx context.Context, aggr usageOption) error 
 		m.Logger.Error("Unable to send async task to report usage",
 			zap.Error(err),
 		)
-		// fail through
+		return err
 	}
 
 	return nil
@@ -547,43 +595,18 @@ func (m *Manager) txIncrementOrNew(ctx context.Context, aggr usageOption) error 
 
 type newUsageOption struct {
 	Amount           int64
+	Subscription     *Subscription
 	SubscriptionItem *SubscriptionItem
 }
 
 func (m *Manager) newUsage(tx *gorm.DB, opt newUsageOption) error {
 	usage := &Usage{
 		AggregateTotal:     opt.Amount,
-		StartDate:          opt.SubscriptionItem.PeriodStart,
-		EndDate:            opt.SubscriptionItem.PeriodEnd,
+		StartDate:          opt.Subscription.PeriodStart,
+		EndDate:            opt.Subscription.PeriodEnd,
 		SubscriptionItemID: opt.SubscriptionItem.ID,
 	}
-	createRes := tx.Create(&usage)
-
-	if createRes.Error != nil {
-		pgErr, ok := createRes.Error.(*pgconn.PgError)
-		if ok {
-			if pgErr.Code == "23505" {
-				// this only happens when PeriodStart/PeriodEnd has not been updated yet
-				// TODO: consider publishing outside of retry loop
-				timestamp, _ := ptypes.TimestampProto(time.Now())
-				if err := m.Producer.SendTask(spec.SubscriptionTask, &protocol.Task{
-					Timestamp: timestamp,
-					SubscriptionTask: &protocol.SubscriptionTask{
-						Function:           protocol.SubscriptionTask_Synchronize,
-						SubscriptionItemID: opt.SubscriptionItem.ID,
-					},
-					Type: protocol.Task_Subscription,
-				}); err != nil {
-					m.Logger.Error("Unable to send async task to subscription",
-						zap.Error(err),
-					)
-					// fail through
-				}
-			}
-		}
-	}
-
-	return createRes.Error
+	return tx.Create(&usage).Error
 }
 
 func (m *Manager) getSubscriptionItem(ctx context.Context, subscriptionItemID string) (*SubscriptionItem, error) {
