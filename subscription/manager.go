@@ -442,10 +442,15 @@ type usageOption struct {
 	PartID         *string
 	ReferenceTime  time.Time
 	Amount         int64
+	retryCount     int
+	lastError      error
 }
 
 func (m *Manager) txIncrementOrNew(ctx context.Context, aggr usageOption) error {
-	return m.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if aggr.retryCount > 3 {
+		return fmt.Errorf("Transaction retry exceeded: %w", aggr.lastError)
+	}
+	err := m.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var sub Subscription
 		lookupRes := tx.Clauses(clause.Locking{Strength: "SHARE"}).
 			Preload("SubscriptionItems").
@@ -499,6 +504,21 @@ func (m *Manager) txIncrementOrNew(ctx context.Context, aggr usageOption) error 
 	}, &sql.TxOptions{
 		Isolation: sql.LevelSerializable,
 	})
+
+	if err != nil {
+		pgErr, ok := err.(*pgconn.PgError)
+		if ok {
+			if pgErr.Code == "40001" {
+				// CockroachDB write contention retry
+				aggr.retryCount++
+				aggr.lastError = err
+				return m.txIncrementOrNew(ctx, aggr)
+			}
+		}
+		return err
+	}
+
+	return nil
 }
 
 type newUsageOption struct {
@@ -529,4 +549,32 @@ func (m *Manager) newUsage(tx *gorm.DB, opt newUsageOption) error {
 	}
 
 	return createRes.Error
+}
+
+type listUsageOption struct {
+	ReferenceTime time.Time
+	Before        *time.Time
+	Limit         int
+}
+
+func (m *Manager) listUsages(ctx context.Context, opt listUsageOption) ([]Usage, error) {
+	usages := make([]Usage, 0, opt.Limit)
+	err := m.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		query := tx.
+			Clauses(clause.Locking{Strength: "SHARE"}).
+			Preload("SubscriptionItem.Part").
+			Limit(opt.Limit).
+			Order("end_date asc").
+			Where("start_date < ? AND ? < end_date", opt.ReferenceTime, opt.ReferenceTime)
+
+		if opt.Before != nil {
+			query = query.Where("? < end_date", *opt.Before)
+		}
+
+		return query.Find(&usages).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return usages, nil
 }

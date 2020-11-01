@@ -169,6 +169,17 @@ func main() {
 		)
 	}
 
+	subscriptionTask, err := subscription.NewTask(subscription.TaskOptions{
+		StripeClient:        stripeClient,
+		SubscriptionManager: subscriptionManager,
+		Logger:              logger,
+	})
+	if err != nil {
+		logger.Fatal("Cannot get subscription task",
+			zap.Error(err),
+		)
+	}
+
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
@@ -184,6 +195,9 @@ func main() {
 			zap.Error(err),
 		)
 	}
+
+	subscriptionTask.HandleStripe(ctx)
+
 	logger.Info("API task started")
 
 	<-c
