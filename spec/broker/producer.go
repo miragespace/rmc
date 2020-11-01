@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/protocol"
 )
 
@@ -12,4 +13,5 @@ type Producer interface {
 	SendProvisionRequest(hostIdentifier string, p *protocol.ProvisionRequest) error
 	SendProvisionReply(p *protocol.ProvisionReply) error
 	SendHeartbeat(p *protocol.Heartbeat) error
+	SendTask(taskType spec.TaskType, p *protocol.Task) error
 }

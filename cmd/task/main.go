@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -34,9 +33,6 @@ func main() {
 	var authEnvironment auth.Environment
 	var dotFile string
 	var err error
-
-	subscriptionTaskCapable := flag.Bool("subscription", false, "task instance will also be responsible for SubscriptionTask")
-	flag.Parse()
 
 	// Determine running environment and initialize structural logger
 	env := os.Getenv("ENV")
@@ -106,8 +102,17 @@ func main() {
 	}
 	defer amqpBroker.Close()
 
+	subscriptionProducer, err := amqpBroker.Producer()
+	if err != nil {
+		logger.Fatal("Cannot setup producer for subscription",
+			zap.Error(err),
+		)
+	}
+	defer subscriptionProducer.Close()
+
 	subscriptionManager, err := subscription.NewManager(subscription.ManagerOptions{
 		StripeClient: stripeClient,
+		Producer:     subscriptionProducer,
 		DB:           db,
 		Logger:       logger,
 	})
@@ -173,10 +178,31 @@ func main() {
 		)
 	}
 
+	subscriptionConsumer, err := amqpBroker.Consumer()
+	if err != nil {
+		logger.Fatal("Cannot setup consumer for subscription",
+			zap.Error(err),
+		)
+	}
+	defer subscriptionConsumer.Close()
+
+	subscriptionTask, err := subscription.NewTask(subscription.TaskOptions{
+		StripeClient:        stripeClient,
+		Consumer:            subscriptionConsumer,
+		SubscriptionManager: subscriptionManager,
+		Logger:              logger,
+	})
+	if err != nil {
+		logger.Fatal("Cannot get subscription task",
+			zap.Error(err),
+		)
+	}
+
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	if err := instanceTask.HandleReply(ctx); err != nil {
 		logger.Fatal("Cannot handle instance replies",
@@ -189,19 +215,10 @@ func main() {
 		)
 	}
 
-	if *subscriptionTaskCapable {
-		subscriptionTask, err := subscription.NewTask(subscription.TaskOptions{
-			StripeClient:        stripeClient,
-			SubscriptionManager: subscriptionManager,
-			Logger:              logger,
-		})
-		if err != nil {
-			logger.Fatal("Cannot get subscription task",
-				zap.Error(err),
-			)
-		}
-		subscriptionTask.HandleStripe(ctx)
-		logger.Info("Task instance will run SubscriptionTask")
+	if err := subscriptionTask.HandleTask(ctx); err != nil {
+		logger.Fatal("Cannot handle async task",
+			zap.Error(err),
+		)
 	}
 
 	logger.Info("API task started")

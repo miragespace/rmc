@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/broker"
 	"github.com/zllovesuki/rmc/spec/protocol"
 
@@ -19,6 +20,7 @@ var _ broker.Consumer = &AMQPBroker{}
 const (
 	instanceControlExchange   string = "host_control_exchange"
 	instanceProvisionExchange        = "host_provision_exchange"
+	asyncTaskExchange                = "async_task_exchange"
 	hostHeartbeatExchange            = "heartbeat_exchange"
 	hostReplyRoutingKey              = "request_reply"
 )
@@ -78,6 +80,7 @@ func (a *AMQPBroker) setupExchanges(channel *amqp.Channel) error {
 		instanceControlExchange,
 		instanceProvisionExchange,
 		hostHeartbeatExchange,
+		asyncTaskExchange,
 	}
 	for _, exchange := range exchanges {
 		if err := channel.ExchangeDeclare(
@@ -179,6 +182,17 @@ func (a *AMQPBroker) SendHeartbeat(b *protocol.Heartbeat) error {
 	}
 	if err := a.publishViaRoutingKey(hostHeartbeatExchange, "heartbeat", protoBytes); err != nil {
 		return extErrors.Wrap(err, "Cannot publish heartbeats")
+	}
+	return nil
+}
+
+func (a *AMQPBroker) SendTask(taskType spec.TaskType, p *protocol.Task) error {
+	protoBytes, err := proto.Marshal(p)
+	if err != nil {
+		return extErrors.Wrap(err, "Cannot encode message into bytes")
+	}
+	if err := a.publishViaRoutingKey(asyncTaskExchange, string(taskType), protoBytes); err != nil {
+		return extErrors.Wrap(err, "Cannot publish task request")
 	}
 	return nil
 }
@@ -370,4 +384,34 @@ func (a *AMQPBroker) ReceiveHeartbeat(ctx context.Context, processor string) (<-
 		}
 	}()
 	return hChan, nil
+}
+
+func (a *AMQPBroker) ReceiveTask(ctx context.Context, taskType spec.TaskType) (<-chan *protocol.Task, error) {
+	name := "process_" + asyncTaskExchange + "_" + string(taskType)
+	msgChan, err := a.getMsgChannel(name, asyncTaskExchange, string(taskType))
+	if err != nil {
+		return nil, extErrors.Wrap(err, "Cannot setup consumer")
+	}
+	tChan := make(chan *protocol.Task)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case d := <-msgChan:
+				var req protocol.Task
+				if err := proto.Unmarshal(d.Body, &req); err != nil {
+					d.Nack(false, false)
+					continue
+				}
+				tChan <- &req
+				if err := d.Ack(false); err != nil {
+					a.logger.Error("Unable to ack heartbeat message",
+						zap.Error(err),
+					)
+				}
+			}
+		}
+	}()
+	return tChan, nil
 }

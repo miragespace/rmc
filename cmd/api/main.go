@@ -129,12 +129,6 @@ func main() {
 		)
 	}
 	defer amqpBroker.Close()
-	producer, err := amqpBroker.Producer()
-	if err != nil {
-		logger.Fatal("Cannot setup broker as producer",
-			zap.Error(err),
-		)
-	}
 
 	// Initialize authentication manager
 	smtpAuth := smtp.PlainAuth("", os.Getenv("SMTP_USERNAME"), os.Getenv("SMTP_PASSWORD"), os.Getenv("SMTP_HOST"))
@@ -176,8 +170,16 @@ func main() {
 		)
 	}
 
+	subscriptionProducer, err := amqpBroker.Producer()
+	if err != nil {
+		logger.Fatal("Cannot setup broker as producer",
+			zap.Error(err),
+		)
+	}
+	defer subscriptionProducer.Close()
 	subscriptionManager, err := subscription.NewManager(subscription.ManagerOptions{
 		StripeClient: stripeClient,
+		Producer:     subscriptionProducer,
 		DB:           db,
 		Logger:       logger,
 	})
@@ -209,8 +211,16 @@ func main() {
 		)
 	}
 
+	instanceProducer, err := amqpBroker.Producer()
+	if err != nil {
+		logger.Fatal("Cannot setup broker as producer",
+			zap.Error(err),
+		)
+	}
+	defer instanceProducer.Close()
+
 	instanceLifecycleManager, err := instance.NewLifecycleManager(instance.LifecycleManagerOption{
-		Producer: producer,
+		Producer: instanceProducer,
 	})
 
 	instanceRouter, err := instance.NewService(instance.ServiceOptions{
@@ -308,9 +318,7 @@ func main() {
 
 	<-c
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer func() {
-		cancel()
-	}()
+	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Fatal("Server Shutdown Failed", zap.Error(err))

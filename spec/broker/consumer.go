@@ -3,6 +3,7 @@ package broker
 import (
 	"context"
 
+	"github.com/zllovesuki/rmc/spec"
 	"github.com/zllovesuki/rmc/spec/protocol"
 )
 
@@ -14,4 +15,5 @@ type Consumer interface {
 	ReceiveControlReply(ctx context.Context) (<-chan *protocol.ControlReply, error)
 	ReceiveProvisionReply(ctx context.Context) (<-chan *protocol.ProvisionReply, error)
 	ReceiveHeartbeat(ctx context.Context, processor string) (<-chan *protocol.Heartbeat, error)
+	ReceiveTask(ctx context.Context, taskType spec.TaskType) (<-chan *protocol.Task, error)
 }

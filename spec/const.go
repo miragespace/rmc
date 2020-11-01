@@ -11,3 +11,9 @@ const (
 	BedrockMinecraftDockerImage string = "itzg/minecraft-bedrock-server"
 	BedrockMinecraftUDPPort     string = "19132"
 )
+
+type TaskType string
+
+const (
+	SubscriptionTask TaskType = "subscription"
+)

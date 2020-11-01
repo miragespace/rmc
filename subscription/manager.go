@@ -7,6 +7,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/zllovesuki/rmc/spec"
+	"github.com/zllovesuki/rmc/spec/broker"
+	"github.com/zllovesuki/rmc/spec/protocol"
+
+	"github.com/golang/protobuf/ptypes"
 	"github.com/jackc/pgconn"
 	extErrors "github.com/pkg/errors"
 	"github.com/stripe/stripe-go/v72"
@@ -19,6 +24,7 @@ import (
 // ManagerOptions is used to setup SubscriptionManager's dependencies
 type ManagerOptions struct {
 	StripeClient *client.API
+	Producer     broker.Producer
 	DB           *gorm.DB
 	Logger       *zap.Logger
 }
@@ -32,6 +38,9 @@ type Manager struct {
 func NewManager(option ManagerOptions) (*Manager, error) {
 	if option.StripeClient == nil {
 		return nil, fmt.Errorf("nil StripeClient is invalid")
+	}
+	if option.Producer == nil {
+		return nil, fmt.Errorf("nil Producer is invalid")
 	}
 	if option.DB == nil {
 		return nil, fmt.Errorf("nil DB is invalid")
@@ -450,6 +459,7 @@ func (m *Manager) txIncrementOrNew(ctx context.Context, aggr usageOption) error 
 	if aggr.retryCount > 3 {
 		return fmt.Errorf("Transaction retry exceeded: %w", aggr.lastError)
 	}
+	var variableItem *SubscriptionItem
 	err := m.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var sub Subscription
 		lookupRes := tx.Clauses(clause.Locking{Strength: "SHARE"}).
@@ -463,7 +473,6 @@ func (m *Manager) txIncrementOrNew(ctx context.Context, aggr usageOption) error 
 			return lookupRes.Error
 		}
 
-		var variableItem *SubscriptionItem
 		if aggr.PartID == nil {
 			variableItem = sub.findPrimaryVariableItem()
 		} else {
@@ -518,6 +527,21 @@ func (m *Manager) txIncrementOrNew(ctx context.Context, aggr usageOption) error 
 		return err
 	}
 
+	timestamp, _ := ptypes.TimestampProto(time.Now())
+	if err := m.Producer.SendTask(spec.SubscriptionTask, &protocol.Task{
+		Timestamp: timestamp,
+		SubscriptionTask: &protocol.SubscriptionTask{
+			Function:           protocol.SubscriptionTask_ReportUsage,
+			SubscriptionItemID: variableItem.ID,
+		},
+		Type: protocol.Task_Subscription,
+	}); err != nil {
+		m.Logger.Error("Unable to send async task to report usage",
+			zap.Error(err),
+		)
+		// fail through
+	}
+
 	return nil
 }
 
@@ -540,10 +564,21 @@ func (m *Manager) newUsage(tx *gorm.DB, opt newUsageOption) error {
 		if ok {
 			if pgErr.Code == "23505" {
 				// this only happens when PeriodStart/PeriodEnd has not been updated yet
-				// TODO: signal background task to synchronize subscriptionItem with Stripe
-				m.Logger.Info("Attempting to increment usage on outdated subscriptionItem",
-					zap.String("SubscriptionItemID", opt.SubscriptionItem.ID),
-				)
+				// TODO: consider publishing outside of retry loop
+				timestamp, _ := ptypes.TimestampProto(time.Now())
+				if err := m.Producer.SendTask(spec.SubscriptionTask, &protocol.Task{
+					Timestamp: timestamp,
+					SubscriptionTask: &protocol.SubscriptionTask{
+						Function:           protocol.SubscriptionTask_Synchronize,
+						SubscriptionItemID: opt.SubscriptionItem.ID,
+					},
+					Type: protocol.Task_Subscription,
+				}); err != nil {
+					m.Logger.Error("Unable to send async task to subscription",
+						zap.Error(err),
+					)
+					// fail through
+				}
 			}
 		}
 	}
@@ -551,30 +586,40 @@ func (m *Manager) newUsage(tx *gorm.DB, opt newUsageOption) error {
 	return createRes.Error
 }
 
-type listUsageOption struct {
-	ReferenceTime time.Time
-	Before        *time.Time
-	Limit         int
-}
-
-func (m *Manager) listUsages(ctx context.Context, opt listUsageOption) ([]Usage, error) {
-	usages := make([]Usage, 0, opt.Limit)
+func (m *Manager) getSubscriptionItem(ctx context.Context, subscriptionItemID string) (*SubscriptionItem, error) {
+	var item SubscriptionItem
 	err := m.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		query := tx.
+		return tx.
 			Clauses(clause.Locking{Strength: "SHARE"}).
-			Preload("SubscriptionItem.Part").
-			Limit(opt.Limit).
-			Order("end_date asc").
-			Where("start_date < ? AND ? < end_date", opt.ReferenceTime, opt.ReferenceTime)
-
-		if opt.Before != nil {
-			query = query.Where("? < end_date", *opt.Before)
-		}
-
-		return query.Find(&usages).Error
+			Preload("Part").
+			First(&item, "id = ?", subscriptionItemID).Error
 	})
 	if err != nil {
 		return nil, err
 	}
-	return usages, nil
+	return &item, nil
+}
+
+type usageLookupOption struct {
+	ReferenceTime      time.Time
+	SubscriptionItemID string
+}
+
+func (m *Manager) getUsageBySubscriptionItemID(ctx context.Context, opt usageLookupOption) (*Usage, error) {
+	var usage Usage
+	err := m.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		query := tx.
+			Clauses(clause.Locking{Strength: "SHARE"}).
+			Preload("SubscriptionItem").
+			Preload("SubscriptionItem.Part").
+			Order("end_date asc").
+			Where("start_date < ? AND ? < end_date", opt.ReferenceTime, opt.ReferenceTime).
+			Where("subscription_item_id = ?", opt.SubscriptionItemID)
+
+		return query.First(&usage).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &usage, nil
 }

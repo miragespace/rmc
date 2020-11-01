@@ -1,0 +1,31 @@
+syntax = "proto3";
+package protocol;
+
+option go_package = "github.com/zllovesuki/rmc/spec/protocol";
+
+import "google/protobuf/timestamp.proto";
+
+message SubscriptionTask {
+    enum SubsctiptionFunc {
+        Unknown = 0;
+        ReportUsage = 1;
+        Synchronize = 2;
+    }
+
+    SubsctiptionFunc Function = 1;
+
+    string SubscriptionItemID = 5;
+}
+
+message Task {
+    enum TaskType {
+        Unknown = 0;
+        Subscription = 1;
+    }
+
+    google.protobuf.Timestamp Timestamp = 1;
+
+    SubscriptionTask SubscriptionTask = 2;
+
+    TaskType Type = 10;
+}

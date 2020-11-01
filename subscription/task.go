@@ -6,17 +6,20 @@ import (
 	"math"
 	"time"
 
+	"github.com/zllovesuki/rmc/spec"
+	"github.com/zllovesuki/rmc/spec/broker"
+	"github.com/zllovesuki/rmc/spec/protocol"
+
+	"github.com/golang/protobuf/ptypes"
+	extErrors "github.com/pkg/errors"
 	"github.com/stripe/stripe-go/v72"
 	"github.com/stripe/stripe-go/v72/client"
 	"go.uber.org/zap"
 )
 
-const (
-	batchSize = 10
-)
-
 type TaskOptions struct {
 	StripeClient        *client.API
+	Consumer            broker.Consumer
 	SubscriptionManager *Manager
 	Logger              *zap.Logger
 }
@@ -25,13 +28,12 @@ type Task struct {
 	TaskOptions
 }
 
-// This background task will:
-// 1. Synchronize database state with Stripe
-// ~~2. Report aggregate usage~~
-
 func NewTask(option TaskOptions) (*Task, error) {
 	if option.StripeClient == nil {
 		return nil, fmt.Errorf("nil StripeClient is invalid")
+	}
+	if option.Consumer == nil {
+		return nil, fmt.Errorf("nil Consumer is invalid")
 	}
 	if option.SubscriptionManager == nil {
 		return nil, fmt.Errorf("nil SubscriptionManager is invalid")
@@ -44,93 +46,98 @@ func NewTask(option TaskOptions) (*Task, error) {
 	}, nil
 }
 
-func (t *Task) HandleStripe(ctx context.Context) {
+func (t *Task) HandleTask(ctx context.Context) error {
+	tChan, err := t.Consumer.ReceiveTask(ctx, spec.SubscriptionTask)
+	if err != nil {
+		return extErrors.Wrap(err, "Cannot get subscription task channel")
+	}
+
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			default:
-				err := t.reportLoop(ctx)
-				if err != nil {
-					t.Logger.Error("Cannot report usage to Stripe",
-						zap.Error(err),
-					)
+			case task := <-tChan:
+				if task.GetType() != protocol.Task_Subscription {
+					t.Logger.Error("Received non Subscription task")
+					continue
 				}
-				time.Sleep(time.Minute * 15)
+				timestamp := task.GetTimestamp()
+				if timestamp == nil {
+					t.Logger.Error("Received nil Timestamp")
+					continue
+				}
+				subTask := task.GetSubscriptionTask()
+				if subTask == nil {
+					t.Logger.Error("Task has nil SubscriptionTask")
+					continue
+				}
+				subscriptionItemID := subTask.GetSubscriptionItemID()
+				if len(subscriptionItemID) == 0 {
+					t.Logger.Error("Received empty SubscriptionItemID")
+					continue
+				}
+
+				logger := t.Logger.With(zap.String("SubscriptionItemID", subscriptionItemID))
+
+				switch subTask.GetFunction() {
+				case protocol.SubscriptionTask_ReportUsage:
+					if err := t.reportUsage(ctx, task); err != nil {
+						logger.Error("Unable to report usage",
+							zap.Error(err),
+						)
+					}
+				case protocol.SubscriptionTask_Synchronize:
+					if err := t.synchronizePeriod(ctx, task); err != nil {
+						logger.Error("Unable to synchronize with Stripe",
+							zap.Error(err),
+						)
+					}
+				default:
+					logger.Error("SubscriptionTask received unknown Function")
+				}
 			}
 		}
 	}()
+
+	return nil
 }
 
-func (t *Task) reportLoop(ctx context.Context) error {
-	var previousLast *time.Time
-	for {
-		last, err := t.reportUsage(ctx, previousLast)
-		if err != nil {
-			return err
-		}
-		if last == nil {
-			return nil
-		}
-		previousLast = last
-	}
+func (t Task) synchronizePeriod(ctx context.Context, pb *protocol.Task) error {
+	return nil
 }
 
-func (t *Task) reportUsage(ctx context.Context, last *time.Time) (*time.Time, error) {
-	now := time.Now()
-	usages, err := t.SubscriptionManager.listUsages(ctx, listUsageOption{
-		ReferenceTime: now,
-		Before:        last,
-		Limit:         batchSize,
+func (t *Task) reportUsage(ctx context.Context, pb *protocol.Task) error {
+	subscriptionItemID := pb.GetSubscriptionTask().GetSubscriptionItemID()
+	referenceTime, _ := ptypes.Timestamp(pb.GetTimestamp())
+
+	u, err := t.SubscriptionManager.getUsageBySubscriptionItemID(ctx, usageLookupOption{
+		SubscriptionItemID: subscriptionItemID,
+		ReferenceTime:      referenceTime,
 	})
-
 	if err != nil {
-		t.Logger.Error("Cannot list usages from database",
-			zap.Error(err),
-		)
-		return nil, err
+		return extErrors.Wrap(err, "Cannot get usage by subscription item id")
 	}
 
-	if len(usages) == 0 {
-		return nil, nil
+	quantity, err := unitConversion(u)
+	if err != nil {
+		return extErrors.Wrap(err, "Error converting unit for usage")
 	}
 
-	lastEndDate := usages[len(usages)-1].EndDate
-
-	for _, usage := range usages {
-		if now.After(usage.SubscriptionItem.PeriodEnd) {
-			// can't report to Stripe after period end
-			continue
-		}
-		go func(u Usage) {
-			logger := t.Logger.With(zap.String("SubscriptionItemID", u.SubscriptionItemID))
-
-			quantity, err := unitConversion(&u)
-			if err != nil {
-				logger.Error("Error converting unit",
-					zap.Error(err),
-				)
-			}
-
-			_, err = t.StripeClient.UsageRecords.New(&stripe.UsageRecordParams{
-				Params: stripe.Params{
-					Context: ctx,
-				},
-				SubscriptionItem: stripe.String(u.SubscriptionItemID),
-				Quantity:         stripe.Int64(quantity),
-				Timestamp:        stripe.Int64(now.Unix()),
-				Action:           stripe.String(string(stripe.UsageRecordActionSet)),
-			})
-			if err != nil {
-				logger.Error("Unable to report usage to Stripe",
-					zap.Error(err),
-				)
-			}
-		}(usage)
+	_, err = t.StripeClient.UsageRecords.New(&stripe.UsageRecordParams{
+		Params: stripe.Params{
+			Context: ctx,
+		},
+		SubscriptionItem: stripe.String(u.SubscriptionItemID),
+		Quantity:         stripe.Int64(quantity),
+		Timestamp:        stripe.Int64(referenceTime.Unix()),
+		Action:           stripe.String(string(stripe.UsageRecordActionSet)),
+	})
+	if err != nil {
+		return extErrors.Wrap(err, "Cannot report usage to Stripe")
 	}
 
-	return &lastEndDate, nil
+	return nil
 }
 
 func unitConversion(u *Usage) (int64, error) {
