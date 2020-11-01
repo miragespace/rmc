@@ -1,6 +1,6 @@
 version: "3"
 networks:
-  rmc:
+  rmc-multi:
 
 services:
   rabbit:
@@ -15,7 +15,7 @@ services:
       - 5672:5672
       - 15672:15672
     networks:
-      rmc:
+      rmc-multi:
 
   crdb:
     container_name: rmc-crdb
@@ -27,7 +27,7 @@ services:
       - "26257:26257"
       - "8080:8080"
     networks:
-      rmc:
+      rmc-multi:
 
   redis:
     container_name: rmc-redis
@@ -45,7 +45,7 @@ services:
     ports:
       - 6379:6379
     networks:
-      rmc:
+      rmc-multi:
 
   api:
     container_name: api
@@ -53,43 +53,83 @@ services:
       - crdb
       - redis
       - rabbit
-    image: golang:1.15.3-alpine
+    image: rmc-api
     volumes:
       - .:/go/src/rmc
     working_dir: /go/src/rmc
-    command: go run ./cmd/api
     restart: always
     ports:
       - 42069:42069
     networks:
-      rmc:
+      rmc-multi:
 
-  task:
-    container_name: task
+  task1:
+    container_name: task-replica-1
     depends_on:
       - crdb
       - rabbit
-    image: golang:1.15.3-alpine
+    image: rmc-task
     volumes:
       - .:/go/src/rmc
     working_dir: /go/src/rmc
-    command: go run ./cmd/task
     restart: always
     networks:
-      rmc:
+      rmc-multi:
 
-  worker:
-    container_name: worker
+  task2:
+    container_name: task-replica-2
+    depends_on:
+      - crdb
+      - rabbit
+    image: rmc-task
+    volumes:
+      - .:/go/src/rmc
+    working_dir: /go/src/rmc
+    restart: always
+    networks:
+      rmc-multi:
+
+  worker-elaborate-sim:
+    container_name: worker-test
     depends_on:
       - rabbit
-    image: golang:1.15.3-alpine
+    image: rmc-worker
     volumes:
       - .:/go/src/rmc
       - /var/run/docker.sock:/var/run/docker.sock # FOR TESTING ONLY, DON'T ACTUALLY RUN IT IN PRODUCTION
-    environment:
-      HOST_NAME: test
     working_dir: /go/src/rmc
-    command: go run ./cmd/worker
     restart: always
+    environment:
+      HOST_NAME: "elaborate-sim"
     networks:
-      rmc:
+      rmc-multi:
+
+  worker-floral-spring:
+    container_name: worker-floral-spring
+    depends_on:
+      - rabbit
+    image: rmc-worker
+    volumes:
+      - .:/go/src/rmc
+      - /var/run/docker.sock:/var/run/docker.sock # FOR TESTING ONLY, DON'T ACTUALLY RUN IT IN PRODUCTION
+    working_dir: /go/src/rmc
+    restart: always
+    environment:
+      HOST_NAME: "floral-spring"
+    networks:
+      rmc-multi:
+
+  worker-liquid-heart:
+    container_name: worker-liquid-heart
+    depends_on:
+      - rabbit
+    image: rmc-worker
+    volumes:
+      - .:/go/src/rmc
+      - /var/run/docker.sock:/var/run/docker.sock # FOR TESTING ONLY, DON'T ACTUALLY RUN IT IN PRODUCTION
+    working_dir: /go/src/rmc
+    restart: always
+    environment:
+      HOST_NAME: "liquid-heart"
+    networks:
+      rmc-multi:

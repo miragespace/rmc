@@ -1,3 +1,2 @@
 .env.production
-crdb/
-designs/
+crdb
