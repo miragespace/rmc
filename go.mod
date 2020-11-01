@@ -23,6 +23,7 @@ require (
 	github.com/golang/protobuf v1.4.3
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/mux v1.8.0 // indirect
+	github.com/jackc/pgconn v1.7.0
 	github.com/johnsto/go-passwordless v0.0.0-20200616130417-d7e95aa614c8
 	github.com/joho/godotenv v1.3.0
 	github.com/morikuni/aec v1.0.0 // indirect

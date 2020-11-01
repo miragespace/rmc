@@ -234,7 +234,7 @@ func (s *Service) createPlans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.SubscriptionManager.CreatePlans(ctx, plans)
+	err := s.SubscriptionManager.createPlans(ctx, plans)
 	if err != nil {
 		s.Logger.Error("Unable to create plans",
 			zap.Error(err),
@@ -249,7 +249,7 @@ func (s *Service) createPlans(w http.ResponseWriter, r *http.Request) {
 func (s *Service) listPlans(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	plans, err := s.SubscriptionManager.ListPlans(ctx)
+	plans, err := s.SubscriptionManager.listPlans(ctx)
 	if err != nil {
 		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to list plans"))
 		return

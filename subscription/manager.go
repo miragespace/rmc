@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgconn"
 	extErrors "github.com/pkg/errors"
 	"github.com/stripe/stripe-go/v72"
 	"github.com/stripe/stripe-go/v72/client"
@@ -15,16 +16,19 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// ManagerOptions is used to setup SubscriptionManager's dependencies
 type ManagerOptions struct {
 	StripeClient *client.API
 	DB           *gorm.DB
 	Logger       *zap.Logger
 }
 
+// Manager struct is used to manage Subscriptions and Plans
 type Manager struct {
 	ManagerOptions
 }
 
+// NewManager returns a new SubscriptionManager
 func NewManager(option ManagerOptions) (*Manager, error) {
 	if option.StripeClient == nil {
 		return nil, fmt.Errorf("nil StripeClient is invalid")
@@ -44,6 +48,7 @@ func NewManager(option ManagerOptions) (*Manager, error) {
 	}, nil
 }
 
+// Create inserts a new Subscription record in the database
 func (m *Manager) Create(ctx context.Context, si *Subscription) error {
 	result := m.DB.WithContext(ctx).Omit("Plan", "SubscriptionItems.Part").Create(si)
 	if result.Error != nil {
@@ -55,12 +60,14 @@ func (m *Manager) Create(ctx context.Context, si *Subscription) error {
 	return nil
 }
 
+// ListOption specifies the parameters for subscription listing
 type ListOption struct {
 	CustomerID string
 	Before     time.Time
 	Limit      int
 }
 
+// List will return a list of subscriptions for a customer
 func (m *Manager) List(ctx context.Context, opt ListOption) ([]Subscription, error) {
 	baseQuery := m.DB.WithContext(ctx).
 		Preload("SubscriptionItems").
@@ -92,11 +99,13 @@ func (m *Manager) List(ctx context.Context, opt ListOption) ([]Subscription, err
 	return results, nil
 }
 
+// GetOption specifies the paremeters for getting a single Subscription
 type GetOption struct {
 	CustomerID     string
 	SubscriptionID string
 }
 
+// Get will return a subscription for a customer
 func (m *Manager) Get(ctx context.Context, opt GetOption) (*Subscription, error) {
 	if len(opt.CustomerID) == 0 {
 		return nil, fmt.Errorf("CustomerID is required")
@@ -125,6 +134,7 @@ func (m *Manager) Get(ctx context.Context, opt GetOption) (*Subscription, error)
 	return &sub, nil
 }
 
+// GetUsage will return the aggregate total usage for a single subscription
 func (m *Manager) GetUsage(ctx context.Context, opt GetOption) ([]Usage, error) {
 	if len(opt.CustomerID) == 0 {
 		return nil, fmt.Errorf("CustomerID is required")
@@ -166,11 +176,13 @@ func (m *Manager) GetUsage(ctx context.Context, opt GetOption) ([]Usage, error) 
 	return usages, nil
 }
 
+// AttachPaymentOptions is used for AttachmentPayment
 type AttachPaymentOptions struct {
 	CustomerID      string
 	PaymentMethodID string
 }
 
+// AttachPayment will attach a default payment method to a customer
 func (m *Manager) AttachPayment(ctx context.Context, opt AttachPaymentOptions) error {
 	if len(opt.CustomerID) == 0 {
 		return fmt.Errorf("AttachPaymentOptions.CustomerID is required")
@@ -204,11 +216,13 @@ func (m *Manager) AttachPayment(ctx context.Context, opt AttachPaymentOptions) e
 	return nil
 }
 
+// CreateFromPlanOption is used to specify parameters for creating a subscription
 type CreateFromPlanOption struct {
 	CustomerID string
 	Plan       Plan
 }
 
+// CreateSubscriptionFromPlan will create a subscription with Stripe from an existing Plan
 func (m *Manager) CreateSubscriptionFromPlan(ctx context.Context, opt CreateFromPlanOption) (*stripe.Subscription, error) {
 	if len(opt.CustomerID) == 0 {
 		return nil, fmt.Errorf("SetupOptions.CustomerID is required")
@@ -230,7 +244,7 @@ func (m *Manager) CreateSubscriptionFromPlan(ctx context.Context, opt CreateFrom
 	return sub, nil
 }
 
-func (m *Manager) SynchronizeSubscriptionStatus(ctx context.Context, subscriptionID string) error {
+func (m *Manager) synchronizeSubscriptionStatus(ctx context.Context, subscriptionID string) error {
 	subscriptionParams := &stripe.SubscriptionParams{
 		Params: stripe.Params{
 			Context: ctx,
@@ -253,6 +267,7 @@ func (m *Manager) SynchronizeSubscriptionStatus(ctx context.Context, subscriptio
 	return nil
 }
 
+// CancelSubscription will mark the subscription to be cancelled in the next billing period
 func (m *Manager) CancelSubscription(ctx context.Context, subscriptionID string) error {
 	updateParams := &stripe.SubscriptionParams{
 		Params: stripe.Params{
@@ -274,7 +289,7 @@ func (m *Manager) CancelSubscription(ctx context.Context, subscriptionID string)
 	return nil
 }
 
-func (m *Manager) CreatePlans(ctx context.Context, plans []Plan) error {
+func (m *Manager) createPlans(ctx context.Context, plans []Plan) error {
 	for k := range plans {
 		if err := plans[k].createPlanOnStripe(ctx, m.StripeClient); err != nil {
 			return err
@@ -286,7 +301,7 @@ func (m *Manager) CreatePlans(ctx context.Context, plans []Plan) error {
 	return nil
 }
 
-func (m *Manager) ListPlans(ctx context.Context) ([]Plan, error) {
+func (m *Manager) listPlans(ctx context.Context) ([]Plan, error) {
 	plans := make([]Plan, 0, 1)
 	if lookupRes := m.DB.WithContext(ctx).
 		Preload("Parts").
@@ -296,6 +311,7 @@ func (m *Manager) ListPlans(ctx context.Context) ([]Plan, error) {
 	return plans, nil
 }
 
+// GetPlan will return a defined Plan
 func (m *Manager) GetPlan(ctx context.Context, planID string) (*Plan, error) {
 	var plan Plan
 	lookupRes := m.DB.WithContext(ctx).
@@ -310,43 +326,6 @@ func (m *Manager) GetPlan(ctx context.Context, planID string) (*Plan, error) {
 	return &plan, nil
 }
 
-// TODO: support non-primary increment
-
-type newUsageOption struct {
-	PartID  *string
-	Amount  int64
-	Primary bool
-}
-
-func (m *Manager) newUsage(tx *gorm.DB, sub *Subscription, opt newUsageOption) error {
-	if sub == nil {
-		return fmt.Errorf("Subscription cannot be nil")
-	}
-	if !opt.Primary && opt.PartID == nil {
-		return fmt.Errorf("PartID cannot be nil when creating secondary usage")
-	}
-
-	variablePart := sub.Plan.findVariablePart(opt.Primary, opt.PartID)
-	if variablePart == nil {
-		return fmt.Errorf("Cannot find variable Part in Plan with ID %s", sub.PlanID)
-	}
-	subscriptionItem := sub.findSubscriptionItemByPartID(variablePart.ID)
-	if subscriptionItem == nil {
-		return fmt.Errorf("Cannot find corresponding subscriptionItem")
-	}
-
-	currentBillingStart := sub.SubscriptionItems[0].PeriodStart
-	currentBillingEnd := sub.SubscriptionItems[0].PeriodEnd
-	usage := &Usage{
-		AggregateTotal:     opt.Amount,
-		StartDate:          currentBillingStart,
-		EndDate:            currentBillingEnd,
-		SubscriptionItemID: subscriptionItem.ID,
-	}
-	// TODO: handle edge case where billing periods are not updated yet
-	return tx.Create(&usage).Error
-}
-
 // PrimaryUsageOption specifies which primary subscription to increment and by how much
 type PrimaryUsageOption struct {
 	SubscriptionID string
@@ -354,22 +333,45 @@ type PrimaryUsageOption struct {
 	Amount         int64
 }
 
+func (p *PrimaryUsageOption) validate() error {
+	if len(p.SubscriptionID) == 0 {
+		return fmt.Errorf("empty SubscriptionID is invalid")
+	}
+	if p.ReferenceTime.IsZero() {
+		return fmt.Errorf("invalid ReferenceTime")
+	}
+	if p.Amount < 0 {
+		return fmt.Errorf("negative Amount is invalid")
+	}
+	return nil
+}
+
 // IncrementPrimaryUsage will increment the primary usage record for billing
 func (m *Manager) IncrementPrimaryUsage(ctx context.Context, opts []PrimaryUsageOption) error {
 	if len(opts) == 0 {
 		return nil
 	}
+	for _, opt := range opts {
+		if err := opt.validate(); err != nil {
+			return err
+		}
+	}
+
 	// TODO: make this configurable
 	concurrentSemaphore := make(chan struct{}, 5)
 	for _, opt := range opts {
 		concurrentSemaphore <- struct{}{}
 		go func(aggr PrimaryUsageOption) {
-			if err := m.txIncrementOrNew(ctx, aggr); err != nil {
+			if err := m.txIncrementOrNew(ctx, usageOption{
+				SubscriptionID: aggr.SubscriptionID,
+				PartID:         nil,
+				ReferenceTime:  aggr.ReferenceTime,
+				Amount:         aggr.Amount,
+			}); err != nil {
 				m.Logger.Error("Error incrementing primary usage",
 					zap.String("SubscriptionID", aggr.SubscriptionID),
 					zap.Error(err),
 				)
-				// fail through
 			}
 			<-concurrentSemaphore
 		}(opt)
@@ -377,7 +379,72 @@ func (m *Manager) IncrementPrimaryUsage(ctx context.Context, opts []PrimaryUsage
 	return nil
 }
 
-func (m *Manager) txIncrementOrNew(ctx context.Context, aggr PrimaryUsageOption) error {
+// SecondaryUsageOption specifies which secondary subscription to increment and by how much
+type SecondaryUsageOption struct {
+	SubscriptionID string
+	PartID         string
+	ReferenceTime  time.Time
+	Amount         int64
+}
+
+func (s *SecondaryUsageOption) validate() error {
+	if len(s.SubscriptionID) == 0 {
+		return fmt.Errorf("empty SubscriptionID is invalid")
+	}
+	if len(s.PartID) == 0 {
+		return fmt.Errorf("empty PartID is invalid")
+	}
+	if s.ReferenceTime.IsZero() {
+		return fmt.Errorf("invalid ReferenceTime")
+	}
+	if s.Amount < 0 {
+		return fmt.Errorf("negative Amount is invalid")
+	}
+	return nil
+}
+
+// IncrementSecondaryUsage will increment the secondary usage record for billing
+func (m *Manager) IncrementSecondaryUsage(ctx context.Context, opts []SecondaryUsageOption) error {
+	if len(opts) == 0 {
+		return nil
+	}
+	for _, opt := range opts {
+		if err := opt.validate(); err != nil {
+			return err
+		}
+	}
+
+	// TODO: make this configurable
+	concurrentSemaphore := make(chan struct{}, 5)
+	for _, opt := range opts {
+		concurrentSemaphore <- struct{}{}
+		go func(aggr SecondaryUsageOption) {
+			if err := m.txIncrementOrNew(ctx, usageOption{
+				SubscriptionID: aggr.SubscriptionID,
+				PartID:         &aggr.PartID,
+				ReferenceTime:  aggr.ReferenceTime,
+				Amount:         aggr.Amount,
+			}); err != nil {
+				m.Logger.Error("Error incrementing secondary usage",
+					zap.String("SubscriptionID", aggr.SubscriptionID),
+					zap.String("PartID", aggr.PartID),
+					zap.Error(err),
+				)
+			}
+			<-concurrentSemaphore
+		}(opt)
+	}
+	return nil
+}
+
+type usageOption struct {
+	SubscriptionID string
+	PartID         *string
+	ReferenceTime  time.Time
+	Amount         int64
+}
+
+func (m *Manager) txIncrementOrNew(ctx context.Context, aggr usageOption) error {
 	return m.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var sub Subscription
 		lookupRes := tx.Clauses(clause.Locking{Strength: "SHARE"}).
@@ -391,9 +458,19 @@ func (m *Manager) txIncrementOrNew(ctx context.Context, aggr PrimaryUsageOption)
 			return lookupRes.Error
 		}
 
-		variableItem := sub.findPrimaryVariableItem()
+		var variableItem *SubscriptionItem
+		if aggr.PartID == nil {
+			variableItem = sub.findPrimaryVariableItem()
+		} else {
+			variablePart := sub.Plan.findVariablePart(false, aggr.PartID)
+			if variablePart == nil {
+				return fmt.Errorf("No secondary variable Part found for subscription with ID %s", aggr.SubscriptionID)
+			}
+			variableItem = sub.findSubscriptionItemByPartID(variablePart.ID)
+		}
+
 		if variableItem == nil {
-			return fmt.Errorf("No primary variable item for subscription with ID %s", aggr.SubscriptionID)
+			return fmt.Errorf("No variable item found for subscription with ID %s", aggr.SubscriptionID)
 		}
 
 		// try updating current period usage record
@@ -408,29 +485,48 @@ func (m *Manager) txIncrementOrNew(ctx context.Context, aggr PrimaryUsageOption)
 			m.Logger.Error("Primary usage update affected more than 1 row",
 				zap.String("SubscriptionID", aggr.SubscriptionID),
 			)
-			// fail through
+			return fmt.Errorf("Primary usage update affected more than 1 row")
 		}
 		if res.RowsAffected > 0 {
 			return nil
 		}
 
 		// new usage record
-		return m.newUsage(tx, &sub, newUsageOption{
-			Amount:  aggr.Amount,
-			Primary: true,
+		return m.newUsage(tx, newUsageOption{
+			Amount:           aggr.Amount,
+			SubscriptionItem: variableItem,
 		})
 	}, &sql.TxOptions{
 		Isolation: sql.LevelSerializable,
 	})
 }
 
-type SecondaryUsageOption struct {
-	SubscriptionID string
-	PartID         string
-	ReferenceTime  time.Time
-	Amount         int64
+type newUsageOption struct {
+	Amount           int64
+	SubscriptionItem *SubscriptionItem
 }
 
-func (m *Manager) IncrementSecondaryUsage(ctx context.Context, opts []SecondaryUsageOption) error {
-	panic("not implemented")
+func (m *Manager) newUsage(tx *gorm.DB, opt newUsageOption) error {
+	usage := &Usage{
+		AggregateTotal:     opt.Amount,
+		StartDate:          opt.SubscriptionItem.PeriodStart,
+		EndDate:            opt.SubscriptionItem.PeriodEnd,
+		SubscriptionItemID: opt.SubscriptionItem.ID,
+	}
+	createRes := tx.Create(&usage)
+
+	if createRes.Error != nil {
+		pgErr, ok := createRes.Error.(*pgconn.PgError)
+		if ok {
+			if pgErr.Code == "23505" {
+				// this only happens when PeriodStart/PeriodEnd has not been updated yet
+				// TODO: signal background task to synchronize subscriptionItem with Stripe
+				m.Logger.Info("Attempting to increment usage on outdated subscriptionItem",
+					zap.String("SubscriptionItemID", opt.SubscriptionItem.ID),
+				)
+			}
+		}
+	}
+
+	return createRes.Error
 }
