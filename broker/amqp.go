@@ -190,7 +190,9 @@ func (a *AMQPBroker) getMsgChannel(qName, exchange, routingKey string) (<-chan a
 		false, // auto delete
 		false, // exclusive
 		false, // no wait
-		nil,   // args
+		amqp.Table{
+			"x-queue-type": "quorum",
+		},
 	); err != nil {
 		return nil, err
 	}
