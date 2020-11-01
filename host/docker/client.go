@@ -49,14 +49,9 @@ func NewClient(option Options) (*Client, error) {
 }
 
 func (c *Client) ProvisionInstance(ctx context.Context, p *protocol.Instance) (int, error) {
-	out, err := c.Client.ImagePull(ctx, spec.JavaMinecraftDockerImage, types.ImagePullOptions{})
-	if err != nil {
-		return 0, err
-	}
-	io.Copy(ioutil.Discard, out) // needed to make sure image pull was done. TODO: ensure image existence when starting host worker
 
 	// Reference: https://medium.com/backendarmy/controlling-the-docker-engine-in-go-d25fc0fe2c45
-
+	var err error
 	var mcServerPort string
 	var mcServerImage string
 	var mcPortType string
@@ -85,6 +80,12 @@ func (c *Client) ProvisionInstance(ctx context.Context, p *protocol.Instance) (i
 	default:
 		return 0, fmt.Errorf("Unexpected ServerEdition: %s", instanceParams["ServerEdition"])
 	}
+
+	out, err := c.Client.ImagePull(ctx, mcServerImage, types.ImagePullOptions{})
+	if err != nil {
+		return 0, err
+	}
+	io.Copy(ioutil.Discard, out) // needed to make sure image pull was done. TODO: ensure image existence when starting host worker
 
 	hostBinding := nat.PortBinding{
 		HostIP:   "0.0.0.0",
