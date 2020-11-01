@@ -123,8 +123,11 @@ func main() {
 
 	// TODO: define it from env variables
 	// TODO: get server IP
+	if len(os.Getenv("HOST_NAME")) == 0 {
+		log.Fatal("Host Name must be specified")
+	}
 	currentHost := host.Host{
-		Name:     "test",
+		Name:     os.Getenv("HOST_NAME"),
 		Capacity: 20,
 	}
 
