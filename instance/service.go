@@ -403,6 +403,93 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 	resp.WriteResponse(w, r, inst)
 }
 
+func (s *Service) recoverError(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	instanceID := chi.URLParam(r, "id")
+
+	logger := s.Logger.With(
+		zap.String("InstanceID", instanceID),
+	)
+
+	lambda := func(current *Instance, desired *Instance) (shouldSave bool, respError interface{}) {
+		if current == nil {
+			respError = resp.ErrNotFound().AddMessages("Cannot find instance with specific ID")
+			return
+		}
+		if current.Status != StatusActive {
+			respError = resp.ErrBadRequest().AddMessages("Instance is not in active status")
+			return
+		}
+
+		if current.State != StateError {
+			respError = resp.ErrBadRequest().AddMessages("Instance not in 'Error' state")
+			return
+		}
+
+		switch current.PreviousState {
+		case StateProvisioning:
+			desired.PreviousState = StateError
+			desired.State = StateProvisioning
+		case StateRemoving:
+			desired.PreviousState = StateError
+			desired.State = StateRemoving
+		default:
+			respError = resp.ErrBadRequest().AddMessages("Unknown PreviousState: " + current.PreviousState)
+			return
+		}
+
+		shouldSave = true
+		return
+	}
+
+	lambdaResult := s.InstanceManager.LambdaUpdate(ctx, instanceID, lambda)
+
+	if lambdaResult.ReturnValue != nil {
+		resp.WriteError(w, r, lambdaResult.ReturnValue.(*resp.Error))
+		return
+	}
+
+	if lambdaResult.TxError != nil {
+		logger.Error("Unable to recover instance",
+			zap.Error(lambdaResult.TxError),
+		)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to recover Instance"))
+		return
+	}
+
+	go func(inst *Instance) {
+		opt := LifecycleOption{
+			HostName:   inst.HostName,
+			InstanceID: inst.ID,
+			Parameters: &inst.Parameters,
+		}
+		var err error
+		switch inst.State {
+		case StateProvisioning:
+			err = s.LifecycleManager.Create(opt)
+		case StateRemoving:
+			err = s.LifecycleManager.Delete(opt)
+		}
+		if err != nil {
+			logger.Error("Unable to send provision request for recovery",
+				zap.Error(err),
+				zap.String("HostName", inst.HostName),
+			)
+			// fail through: as long as database state is consistent, manual mediation is possible
+		}
+	}(lambdaResult.Instance)
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Service) AdminRouter() http.Handler {
+	r := chi.NewRouter()
+
+	r.Post("/{id}/recover", s.recoverError)
+
+	return r
+}
+
 // Router will return the routes under instance API
 func (s *Service) Router() http.Handler {
 	r := chi.NewRouter()

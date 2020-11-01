@@ -269,6 +269,7 @@ func main() {
 
 	// TODO: authentication
 	internal := chi.NewRouter()
+	internal.Mount("/instances", instanceRouter.AdminRouter())
 	internal.Mount("/subscriptions", subscriptionRouter.AdminRouter())
 
 	r.Mount("/internal", internal)
