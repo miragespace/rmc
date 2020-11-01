@@ -4,24 +4,15 @@ import (
 	"github.com/zllovesuki/rmc/spec"
 )
 
-// PartType is the custom type to identify what's the Type of this Part in the Plan
-type PartType string
-
-// Defining constants
-const (
-	FixedType    PartType = "Fixed"
-	VariableType PartType = "Variable"
-)
-
 // Part describes each Part of a Plan. This corresponds to Stripe's "Price"
 type Part struct {
-	ID            string   `json:"id" gorm:"primaryKey"` // Corresponding to Stripe's PriceID
-	Name          string   `json:"name"`                 // Name to describe this Part
-	AmountInCents float64  `json:"amountInCents"`        // Amount in cents (e.g. 15.0 for $0.015/{period})
-	Unit          string   `json:"unit"`                 // How should the AmountInCents apply. If Type is FixedType, then this Part will be billed AmountInCents/month regardless. If Type is Variable, then this Part will be billed Usage * AmountInCents/{unit} in a month
-	Type          PartType `json:"type"`                 // Either FixedType or VariableType
-	Primary       bool     `json:"primary"`              // Indicate if this Part is the Primary part (e.g. Instance, not Addon) or not
-	PlanID        string   `json:"-" gorm:"index"`
+	ID            string   `json:"id" gorm:"primaryKey"`    // Corresponding to Stripe's PriceID
+	Name          string   `json:"name"`                    // Name to describe this Part
+	AmountInCents float64  `json:"amountInCents"`           // Amount in cents (e.g. 15.0 for $0.015/{period})
+	Unit          string   `json:"unit"`                    // How should the AmountInCents apply. If Type is FixedType, then this Part will be billed AmountInCents/month regardless. If Type is Variable, then this Part will be billed Usage * AmountInCents/{unit} in a month
+	Type          PartType `json:"type"`                    // Either FixedType or VariableType
+	Primary       bool     `json:"primary"`                 // Indicate if this Part is the Primary part (e.g. Instance, not Addon) or not
+	PlanID        string   `json:"-" gorm:"index;not null"` // Corresponds to Plan.ID (foreign key: belongs to)
 }
 
 // Plan describes an Instance plan. This corresponds to Stripe's "Product"
