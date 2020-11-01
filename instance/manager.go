@@ -226,7 +226,7 @@ type historyRef struct {
 }
 
 func (m *Manager) logHistory(tx *gorm.DB, ref historyRef) error {
-	if histRes := tx.Create(&History{
+	if histRes := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&History{
 		InstanceID: ref.Instance.ID,
 		Timestamp:  ref.ReferenceTime,
 		State:      ref.Instance.State,

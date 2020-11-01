@@ -148,7 +148,7 @@ func (s *Service) controlInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var nextState string
+		var nextState State
 		switch req.Action {
 		case "Start":
 			if current.State != StateStopped {
@@ -445,7 +445,7 @@ func (s *Service) recoverError(w http.ResponseWriter, r *http.Request) {
 			desired.PreviousState = StateError
 			desired.State = StateRemoving
 		default:
-			respError = resp.ErrBadRequest().AddMessages("Unknown PreviousState: " + current.PreviousState)
+			respError = resp.ErrBadRequest().AddMessages(fmt.Sprintf("Unknown PreviousState: %s", current.PreviousState))
 			return
 		}
 
