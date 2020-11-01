@@ -28,7 +28,6 @@ type Task struct {
 // This background task will:
 // 1. Synchronize database state with Stripe
 // ~~2. Report aggregate usage~~
-// TODO: figure out how to only have one task worker to do all the things (or even partition it)
 
 func NewTask(option TaskOptions) (*Task, error) {
 	if option.StripeClient == nil {

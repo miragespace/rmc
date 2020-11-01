@@ -73,7 +73,7 @@ services:
     volumes:
       - .:/go/src/rmc
     working_dir: /go/src/rmc
-    command: go run ./cmd/task
+    command: go run ./cmd/task -subscription
     restart: always
     networks:
       rmc:
