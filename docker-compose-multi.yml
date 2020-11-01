@@ -64,7 +64,7 @@ services:
       rmc-multi:
 
   task0:
-    container_name: task-with-subscription
+    container_name: task-replica-0
     depends_on:
       - crdb
       - rabbit
@@ -73,7 +73,6 @@ services:
       - .:/go/src/rmc
     working_dir: /go/src/rmc
     restart: always
-    command: -subscription
     networks:
       rmc-multi:
 
