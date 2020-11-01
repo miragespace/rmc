@@ -362,12 +362,15 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Unable to create Instance", "Subscription is invalid or is tied to a retired Plan"))
 		return
 	}
+
+	newID := uuid.New().String()
+	now := time.Now()
 	instanceParams := plan.Parameters
 	instanceParams["ServerVersion"] = req.ServerVersion
 	instanceParams["ServerEdition"] = req.ServerEdition
 
 	inst := Instance{
-		ID:             uuid.New().String(),
+		ID:             newID,
 		CustomerID:     claims.ID,
 		SubscriptionID: req.SubscriptionID,
 		HostName:       host.Name,
@@ -375,6 +378,14 @@ func (s *Service) newInstance(w http.ResponseWriter, r *http.Request) {
 		PreviousState:  StateUnknown,
 		State:          StateProvisioning,
 		Status:         StatusActive,
+		CreatedAt:      now,
+		Histories: []History{
+			{
+				InstanceID: newID,
+				Timestamp:  now,
+				State:      StateProvisioning,
+			},
+		},
 	}
 
 	if err := s.InstanceManager.Create(ctx, &inst); err != nil {

@@ -188,9 +188,8 @@ func main() {
 	}
 
 	instanceManager, err := instance.NewManager(instance.ManagerOptions{
-		DB:                  db,
-		Logger:              logger,
-		SubscriptionManager: subscriptionManager,
+		DB:     db,
+		Logger: logger,
 	})
 	if err != nil {
 		logger.Fatal("Cannot initialize InstanceManager",

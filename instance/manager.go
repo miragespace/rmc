@@ -7,18 +7,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zllovesuki/rmc/subscription"
-
 	extErrors "github.com/pkg/errors"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
+// ManagerOptions describes the depdencies of InstanceManager
 type ManagerOptions struct {
-	DB                  *gorm.DB
-	Logger              *zap.Logger
-	SubscriptionManager *subscription.Manager // TODO: use event sourcing instead of requiring SubscriptionManager as dependency
+	DB     *gorm.DB
+	Logger *zap.Logger
 }
 
 // Manager handles the database operations relating to Instance
@@ -43,9 +41,6 @@ func NewManager(option ManagerOptions) (*Manager, error) {
 	}
 	if option.Logger == nil {
 		return nil, fmt.Errorf("nil Logger is invalid")
-	}
-	if option.SubscriptionManager == nil {
-		return nil, fmt.Errorf("SubscriptionManager is required for usage reporting")
 	}
 	if err := option.DB.AutoMigrate(&Instance{}, &History{}); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot initilize instance.Manager")
@@ -245,16 +240,17 @@ func (m *Manager) listSubscriptionIDs(ctx context.Context, instanceIDs []string)
 	if len(instanceIDs) == 0 {
 		return nil, nil
 	}
-	subIDs := make([]string, 0, 2)
+	insts := make([]Instance, 0, 2)
 	result := m.DB.WithContext(ctx).
-		Model(&Instance{}).
-		Where("id IN ?", instanceIDs).
-		Select("subscription_id").
-		Find(&subIDs)
+		Find(&insts, "id IN ?", instanceIDs)
 
 	if result.Error != nil {
 		return nil, result.Error
 	}
 
+	subIDs := make([]string, 0, len(insts))
+	for _, inst := range insts {
+		subIDs = append(subIDs, inst.SubscriptionID)
+	}
 	return subIDs, nil
 }
