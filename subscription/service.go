@@ -95,6 +95,10 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription", "Database returns error"))
 		return
 	}
+	if plan == nil {
+		resp.WriteError(w, r, resp.ErrNotFound().AddMessages("Specified Plan does not exist"))
+		return
+	}
 	if plan.Retired {
 		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Specified Plan has retired"))
 		return

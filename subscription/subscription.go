@@ -10,10 +10,10 @@ type State string
 // Defining different SubscriptionStates for a Subscription
 const (
 	StateActive    State = "Active"
-	StateInactive        = "Inactive"
-	StatePending         = "Pending"
-	StateCancelled       = "Cancelled"
-	StateOverdue         = "Overdue"
+	StateInactive  State = "Inactive"
+	StatePending   State = "Pending"
+	StateCancelled State = "Cancelled"
+	StateOverdue   State = "Overdue"
 )
 
 // Subscription is a local copy of a Stripe Subscription, with all the relations established

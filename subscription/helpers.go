@@ -29,6 +29,15 @@ func (s *Subscription) findSubscriptionItemByPartID(partID string) *Subscription
 	return nil
 }
 
+func (s *Subscription) findPrimaryVariableItem() *SubscriptionItem {
+	for k, item := range s.SubscriptionItems {
+		if item.Part.Primary && item.Part.Type == VariableType {
+			return &s.SubscriptionItems[k]
+		}
+	}
+	return nil
+}
+
 func (s *Subscription) fromStripeResponse(sub *stripe.Subscription, plan *Plan) error {
 	items := make([]SubscriptionItem, 0, 2)
 	for _, subItem := range sub.Items.Data {

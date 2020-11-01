@@ -298,9 +298,13 @@ func (m *Manager) ListPlans(ctx context.Context) ([]Plan, error) {
 
 func (m *Manager) GetPlan(ctx context.Context, planID string) (*Plan, error) {
 	var plan Plan
-	if lookupRes := m.DB.WithContext(ctx).
+	lookupRes := m.DB.WithContext(ctx).
 		Preload("Parts").
-		First(&plan, "id = ?", planID); lookupRes.Error != nil {
+		First(&plan, "id = ?", planID)
+	if errors.Is(lookupRes.Error, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if lookupRes.Error != nil {
 		return nil, lookupRes.Error
 	}
 	return &plan, nil
@@ -339,6 +343,7 @@ func (m *Manager) newUsage(tx *gorm.DB, sub *Subscription, opt newUsageOption) e
 		EndDate:            currentBillingEnd,
 		SubscriptionItemID: subscriptionItem.ID,
 	}
+	// TODO: handle edge case where billing periods are not updated yet
 	return tx.Create(&usage).Error
 }
 
@@ -354,54 +359,66 @@ func (m *Manager) IncrementPrimaryUsage(ctx context.Context, opts []PrimaryUsage
 	if len(opts) == 0 {
 		return nil
 	}
-	return m.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, aggr := range opts {
-			var sub Subscription
-			lookupRes := tx.Clauses(clause.Locking{Strength: "SHARE"}).
-				Preload("SubscriptionItems").
-				Preload("SubscriptionItems.Part").
-				Preload("Plan").
-				Preload("Plan.Parts").
-				Where("id = ?", aggr.SubscriptionID).
-				First(&sub)
-			if lookupRes.Error != nil {
-				return lookupRes.Error
-			}
-			var subItemID string
-			for _, item := range sub.SubscriptionItems {
-				if item.Part.Primary && item.Part.Type == VariableType {
-					subItemID = item.ID
-				}
-			}
-			if len(subItemID) == 0 {
-				return fmt.Errorf("No primary variable part for subscription with ID %s", aggr.SubscriptionID)
-			}
-			// try updating current period usage record
-			res := tx.Model(&Usage{}).
-				Where("subscription_item_id = ?", subItemID).
-				Where("start_date < ? AND ? <= end_date", aggr.ReferenceTime, aggr.ReferenceTime).
-				UpdateColumn("aggregate_total", gorm.Expr("aggregate_total + ?", aggr.Amount))
-			if res.Error != nil {
-				return res.Error
-			}
-			if res.RowsAffected > 1 {
-				m.Logger.Error("Primary usage update affected more than 1 row",
+	// TODO: make this configurable
+	concurrentSemaphore := make(chan struct{}, 5)
+	for _, opt := range opts {
+		concurrentSemaphore <- struct{}{}
+		go func(aggr PrimaryUsageOption) {
+			if err := m.txIncrementOrNew(ctx, aggr); err != nil {
+				m.Logger.Error("Error incrementing primary usage",
 					zap.String("SubscriptionID", aggr.SubscriptionID),
+					zap.Error(err),
 				)
 				// fail through
 			}
-			if res.RowsAffected > 0 {
-				continue
-			}
-			// new usage record
-			if err := m.newUsage(tx, &sub, newUsageOption{
-				Amount:  aggr.Amount,
-				Primary: true,
-			}); err != nil {
-				return err
-			}
+			<-concurrentSemaphore
+		}(opt)
+	}
+	return nil
+}
+
+func (m *Manager) txIncrementOrNew(ctx context.Context, aggr PrimaryUsageOption) error {
+	return m.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var sub Subscription
+		lookupRes := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Preload("SubscriptionItems").
+			Preload("SubscriptionItems.Part").
+			Preload("Plan").
+			Preload("Plan.Parts").
+			Where("id = ?", aggr.SubscriptionID).
+			First(&sub)
+		if lookupRes.Error != nil {
+			return lookupRes.Error
 		}
-		return nil
+
+		variableItem := sub.findPrimaryVariableItem()
+		if variableItem == nil {
+			return fmt.Errorf("No primary variable item for subscription with ID %s", aggr.SubscriptionID)
+		}
+
+		// try updating current period usage record
+		res := tx.Model(&Usage{}).
+			Where("subscription_item_id = ?", variableItem.ID).
+			Where("start_date < ? AND ? <= end_date", aggr.ReferenceTime, aggr.ReferenceTime).
+			UpdateColumn("aggregate_total", gorm.Expr("aggregate_total + ?", aggr.Amount))
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected > 1 {
+			m.Logger.Error("Primary usage update affected more than 1 row",
+				zap.String("SubscriptionID", aggr.SubscriptionID),
+			)
+			// fail through
+		}
+		if res.RowsAffected > 0 {
+			return nil
+		}
+
+		// new usage record
+		return m.newUsage(tx, &sub, newUsageOption{
+			Amount:  aggr.Amount,
+			Primary: true,
+		})
 	}, &sql.TxOptions{
 		Isolation: sql.LevelSerializable,
 	})
