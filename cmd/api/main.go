@@ -310,7 +310,7 @@ func main() {
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatal("Unable to listen for request",
-				zap.Error(srv.ListenAndServe()),
+				zap.Error(err),
 			)
 		}
 	}()
