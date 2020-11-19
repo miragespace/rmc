@@ -53,6 +53,11 @@ func ErrUnauthorized() *Error {
 		WithMessage("Unauthorized")
 }
 
+func ErrForbidden() *Error {
+	return makeError(403).
+		WithMessage("Forbidden")
+}
+
 func ErrNotFound() *Error {
 	return makeError(404).
 		WithMessage("Requested resources not found")

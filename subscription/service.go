@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/zllovesuki/rmc/auth"
@@ -113,6 +114,12 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 	sub, err := s.SubscriptionManager.CreateSubscriptionFromPlan(ctx, opt)
 
 	if err != nil {
+		if stripeErr, ok := err.(*stripe.Error); ok {
+			if stripeErr.Code == stripe.ErrorCodeResourceMissing && strings.Contains(stripeErr.Msg, "no attached payment source") {
+				resp.WriteError(w, r, resp.ErrForbidden().WithMessage("No payment method on file"))
+				return
+			}
+		}
 		logger.Error("Unable to setup subscription in Stripe",
 			zap.Error(err),
 		)

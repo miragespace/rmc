@@ -145,7 +145,7 @@ func main() {
 		EmailOption: auth.EmailOption{
 			Name: os.Getenv("SITE_NAME"),
 			LinkGenerator: func(uid, token string) string {
-				return fmt.Sprintf("%s/customers/%s/%s", os.Getenv("SITE_URL"), uid, token)
+				return fmt.Sprintf("%s/login/%s/%s", os.Getenv("SITE_URL"), uid, token)
 			},
 		},
 	})
@@ -260,7 +260,9 @@ func main() {
 	r := chi.NewRouter()
 
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowOriginFunc: func(r *http.Request, origin string) bool {
+			return true
+		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
