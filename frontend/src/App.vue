@@ -3,7 +3,7 @@
     <Nav />
 
     <b-container>
-      <router-view />
+      <router-view class="mt-4" />
     </b-container>
     <!-- <div id="nav">
       <router-link to="/">Home</router-link> |
