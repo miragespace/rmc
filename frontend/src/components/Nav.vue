@@ -38,7 +38,7 @@
 export default {
   data() {
     return {
-      loggedInNav: ["Instances", "Plans"],
+      loggedInNav: ["Instances", "Plans", "Subscriptions"],
     };
   },
   methods: {

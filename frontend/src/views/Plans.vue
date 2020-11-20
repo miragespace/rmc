@@ -30,9 +30,9 @@ export default {
       });
       let json = await resp.json();
       if (resp.status == 200) {
-        this.plans = json.result.sort(
-          (a, b) => a.parameters.Players - b.parameters.Players
-        );
+        this.plans = json.result
+          .filter((p) => !p.retired)
+          .sort((a, b) => a.parameters.Players - b.parameters.Players);
       } else {
         this.$refs.alert.showDismissable(
           "danger",

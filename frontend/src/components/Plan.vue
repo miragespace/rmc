@@ -13,6 +13,9 @@
           <b-card-body :title="plan.name">
             <b-card-text>
               {{ plan.description }}
+              <b-badge pill variant="warning" size="sm" v-if="plan.retired">
+                Retired
+              </b-badge>
             </b-card-text>
 
             <b-list-group flush>
@@ -25,10 +28,13 @@
                   {{ plan.currency.toUpperCase() }}
                   {{ part.amountInCents / 100 }}/{{ part.unit }}
                 </b>
+                <b-badge pill variant="info" size="sm" v-if="!part.primary">
+                  Addon
+                </b-badge>
               </b-list-group-item>
             </b-list-group>
 
-            <b-row no-gutters>
+            <b-row no-gutters v-if="showCreate">
               <b-col md="6"></b-col>
               <b-col md="6">
                 <b-form @submit="createStripeSubscription">
@@ -83,8 +89,6 @@
                 </b-form>
               </b-col>
             </b-row>
-
-            <div class="text-right"></div>
           </b-card-body>
         </b-col>
       </b-row>
@@ -112,8 +116,13 @@ export default {
     PaymentSetup,
   },
   props: {
+    showCreate: {
+      type: Boolean,
+      default: true,
+    },
     plan: {
       type: Object,
+      required: true,
     },
   },
   watch: {

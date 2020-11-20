@@ -5,7 +5,7 @@
     <b-container>
       <router-view class="mt-4" />
     </b-container>
-    <footer class="footer">
+    <footer class="footer mt-2">
       <b-container>
         <p class="text-center">
           Rent a Minecraft Server is not associated with Mojang or any of its

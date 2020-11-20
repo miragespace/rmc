@@ -1,7 +1,7 @@
 <template>
   <div>
     <b-card class="mb-4">
-      <b-form @submit="setupPaymentMethod">
+      <b-form @submit.prevent="setupPaymentMethod">
         <b-row>
           <b-col md="8">
             <b-form-group id="cc-name-group" label="Name on card">
@@ -191,8 +191,7 @@ export default {
       }
       this.formControl.submitDisabled = false;
     },
-    async setupPaymentMethod(evt) {
-      evt.preventDefault();
+    async setupPaymentMethod() {
       this.disableSubmit();
 
       try {

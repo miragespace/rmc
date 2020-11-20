@@ -102,7 +102,16 @@
               v-if="!isSingle"
             >
               <b-icon icon="link"></b-icon>
-              refLink
+              Details
+            </b-list-group-item>
+            <b-list-group-item
+              :to="{
+                name: 'Subscription',
+                params: { id: data.subscriptionId },
+              }"
+            >
+              <b-icon icon="cash"></b-icon>
+              Subscription
             </b-list-group-item>
             <b-list-group-item
               href="#"
@@ -156,13 +165,33 @@
     </b-overlay>
     <div v-if="isSingle && data.histories">
       <hr class="my-4" />
-      <b-card
-        class="mt-4 mb-2"
-        title="Lifecycle history"
-        sub-title="Showing only the latest 5 entries."
-      >
-        <b-table striped hover :items="formattedHistory"></b-table>
-      </b-card>
+      <b-overlay :show="formControl.showBusy" rounded="lg" opacity="0.6">
+        <template #overlay>
+          <div class="d-flex align-items-center">
+            <b-spinner small type="grow" variant="secondary"></b-spinner>
+            <b-spinner type="grow" variant="dark"></b-spinner>
+            <b-spinner small type="grow" variant="secondary"></b-spinner>
+            <!-- We add an SR only text for screen readers -->
+            <span class="sr-only">Please wait...</span>
+          </div>
+        </template>
+        <b-card
+          class="mt-4 mb-2"
+          title="Lifecycle history"
+          sub-title="Showing only the latest 5 entries."
+        >
+          <b-table
+            striped
+            hover
+            :fields="formControl.historyFields"
+            :items="data.histories"
+          >
+            <template #cell(timestamp)="data">
+              {{ new Date(data.value).toLocaleString() }}
+            </template>
+          </b-table>
+        </b-card>
+      </b-overlay>
     </div>
   </div>
 </template>
@@ -189,6 +218,16 @@ export default {
       formControl: {
         showBusy: false,
         showDeletePopover: false,
+        historyFields: [
+          {
+            key: "timestamp",
+            label: "Timestamp",
+          },
+          {
+            key: "state",
+            label: "State",
+          },
+        ],
       },
     };
   },
@@ -214,14 +253,6 @@ export default {
         return false;
       }
       return true;
-    },
-    formattedHistory() {
-      return this.data.histories.map((h) => {
-        return {
-          Timestamp: new Date(h.timestamp).toLocaleString(),
-          state: h.state,
-        };
-      });
     },
   },
   methods: {
@@ -252,6 +283,7 @@ export default {
         }
       } catch (err) {
         Sentry.captureException(err);
+        this.$emit("error", "Unable to do instance lifecycle control");
       }
       this.formControl.showBusy = false;
     },
@@ -277,6 +309,7 @@ export default {
         }
       } catch (err) {
         Sentry.captureException(err);
+        this.$emit("error", "Unable to remove instance");
       }
       this.formControl.showBusy = false;
     },
@@ -304,6 +337,7 @@ export default {
         }
       } catch (err) {
         Sentry.captureException(err);
+        this.$emit("error", "Unable to load instance details");
       }
     },
     restoreText() {
