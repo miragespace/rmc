@@ -1,0 +1,10 @@
+name = "rmc"
+type = "webpack"
+account_id = "6259e0f35111d6c3f7b6aa38ded6eccc"
+workers_dev = true
+route = ""
+zone_id = ""
+
+[site]
+bucket = "dist"
+entry-point = "workers-site"
