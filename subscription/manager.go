@@ -143,6 +143,14 @@ func (m *Manager) Get(ctx context.Context, opt GetOption) (*Subscription, error)
 	return &sub, nil
 }
 
+func (m *Manager) GetStripe(ctx context.Context, opt GetOption) (*stripe.Subscription, error) {
+	if len(opt.SubscriptionID) == 0 {
+		return nil, fmt.Errorf("SubscriptionID is required")
+	}
+
+	return m.StripeClient.Subscriptions.Get(opt.SubscriptionID, nil)
+}
+
 // GetUsage will return the aggregate total usage for a single subscription
 func (m *Manager) GetUsage(ctx context.Context, opt GetOption) ([]Usage, error) {
 	if len(opt.CustomerID) == 0 {

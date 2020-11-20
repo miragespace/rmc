@@ -144,12 +144,34 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Service) getStripeCustomer(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	claims := ctx.Value(auth.Context).(*auth.Claims)
+
+	logger := s.Logger.With(
+		zap.String("CustomerID", claims.ID),
+	)
+
+	cust, err := s.CustomerManager.GetStripe(ctx, claims.ID)
+	if err != nil {
+		logger.Error("Cannot get Stripe customer",
+			zap.Error(err),
+		)
+		resp.WriteError(w, r, resp.ErrUnexpected().WithMessage("Cannot fetch details from Stripe"))
+		return
+	}
+
+	resp.WriteResponse(w, r, cust)
+}
+
 // Router will return the routes under customer API
 func (s *Service) Router() http.Handler {
 	r := chi.NewRouter()
 
 	r.Post("/", s.requestLogin)
 	r.Get("/{uid}/{token}", s.handleLogin)
+
+	r.With(s.Auth.Middleware(), s.Auth.ClaimCheck()).Get("/stripe", s.getStripeCustomer)
 
 	return r
 }

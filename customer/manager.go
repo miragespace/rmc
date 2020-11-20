@@ -128,3 +128,7 @@ func (m *Manager) GetByEmail(ctx context.Context, email string) (*Customer, erro
 
 	return &cust, nil
 }
+
+func (m *Manager) GetStripe(ctx context.Context, id string) (*stripe.Customer, error) {
+	return m.stripeClient.Customers.Get(id, nil)
+}

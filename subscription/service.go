@@ -79,7 +79,7 @@ type SubscriptionSetupRequest struct {
 	PlanID string `json:"planId"`
 }
 
-func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
+func (s *Service) createStripeSubscription(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	claims := ctx.Value(auth.Context).(*auth.Claims)
 
@@ -93,7 +93,7 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 
 	plan, err := s.SubscriptionManager.GetPlan(ctx, req.PlanID)
 	if err != nil {
-		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription", "Database returns error"))
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription - Database returns error"))
 		return
 	}
 	if plan == nil {
@@ -123,16 +123,82 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to setup subscription in Stripe",
 			zap.Error(err),
 		)
-		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription", "Payment gateway returns error"))
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription - Payment gateway returns error"))
 		return
 	}
+
+	resp.WriteResponse(w, r, sub)
+}
+
+func (s *Service) createSubscription(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	claims := ctx.Value(auth.Context).(*auth.Claims)
+	id := chi.URLParam(r, "id")
+
+	logger := s.Logger.With(zap.String("CustomerID", claims.ID))
+
+	sub, err := s.SubscriptionManager.GetStripe(ctx, GetOption{
+		SubscriptionID: id,
+	})
+
+	if err != nil {
+		logger.Error("Unable to fetch subscription from Stripe",
+			zap.Error(err),
+		)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription - Payment gateway returned error"))
+		return
+	}
+
+	if sub.Customer.ID != claims.ID {
+		resp.WriteError(w, r, resp.ErrNotFound().AddMessages("Unable to setup subscription - Subscription not found"))
+		return
+	}
+
+	if sub.Status != stripe.SubscriptionStatusActive {
+		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Unable to setup scription - Subscription is not active"))
+		return
+	}
+
+	logger = logger.With(zap.String("SubscriptionID", sub.ID))
+
+	// we have to lookup the actual planID from the subscription
+	var planID string
+	for _, item := range sub.Items.Data {
+		if item.Price != nil {
+			planID = item.Price.Product.ID
+		}
+	}
+	if planID == "" {
+		logger.Error("No Plan found for subscription")
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to lookup subscription's associated Plan"))
+		return
+	}
+	logger = logger.With(zap.String("PlanID", planID))
+
+	plan, err := s.SubscriptionManager.GetPlan(ctx, planID)
+	if err != nil {
+		logger.Error("Unable to lookup Plan from database",
+			zap.Error(err),
+		)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription - Database returns error"))
+		return
+	}
+	if plan == nil {
+		resp.WriteError(w, r, resp.ErrNotFound().AddMessages("Specified Plan does not exist"))
+		return
+	}
+	if plan.Retired {
+		resp.WriteError(w, r, resp.ErrBadRequest().AddMessages("Specified Plan has retired"))
+		return
+	}
+	logger = logger.With(zap.String("PlanID", planID))
 
 	var subscription Subscription
 	if err := subscription.fromStripeResponse(sub, plan); err != nil {
 		logger.Error("Unable to construct Subscription from Stripe response",
 			zap.Error(err),
 		)
-		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription", err.Error()))
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription - "+err.Error()))
 		return
 	}
 
@@ -140,17 +206,12 @@ func (s *Service) setupSubscription(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Unable to save subscription record to database",
 			zap.Error(err),
 		)
-		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription", "Database returns error"))
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to setup subscription - Database returns error"))
 		return
 	}
 
-	resp.WriteResponse(w, r, struct {
-		StripeResponse *stripe.Subscription `json:"stripeResponse"`
-		Subscription   *Subscription        `json:"subscription"`
-	}{
-		StripeResponse: sub,
-		Subscription:   &subscription,
-	})
+	resp.WriteResponse(w, r, subscription)
+
 }
 
 func (s *Service) listSubscriptions(w http.ResponseWriter, r *http.Request) {
@@ -283,7 +344,7 @@ func (s *Service) Router() http.Handler {
 	r.Get("/{id}", s.getSubscription)
 	r.Get("/{id}/usages", s.getSubscriptionUsage)
 	r.Post("/initialSetup", s.setupPayment)
-	r.Post("/", s.setupSubscription)
-
+	r.Post("/", s.createStripeSubscription)
+	r.Put("/{id}", s.createSubscription)
 	return r
 }
