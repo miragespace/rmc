@@ -20,6 +20,7 @@ import (
 	"github.com/zllovesuki/rmc/instance"
 	"github.com/zllovesuki/rmc/response"
 	"github.com/zllovesuki/rmc/subscription"
+	"github.com/zllovesuki/rmc/util"
 
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
@@ -268,6 +269,7 @@ func main() {
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+	r.Use(util.Recovery(logger))
 
 	r.Mount("/customers", customerRouter.Router())
 
