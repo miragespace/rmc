@@ -168,21 +168,26 @@ export default {
       try {
         let subscription = this.handleSubscription;
         let paymentMethod = await this.getPaymentMethod();
-        if (paymentMethod === null) return;
-
-        let cardSetupResp = await this.handleCardSetupRequired({
-          subscription,
-          paymentMethod,
-        });
-        let actionResp = await this.handlePaymentThatRequiresCustomerAction(
-          cardSetupResp
-        );
-        console.log("user action succeed");
-        console.log(actionResp.subscription);
-        this.$emit("subscriptionSetup", actionResp.subscription);
+        if (paymentMethod !== null) {
+          let handle = { subscription, paymentMethod };
+          let cardSetupResp = await this.handleCardSetupRequired(handle);
+          let actionResp = await this.handlePaymentThatRequiresCustomerAction(
+            cardSetupResp
+          );
+          console.log("user action succeeded");
+          console.log(actionResp.subscription);
+          this.$emit("subscriptionSetup", actionResp.subscription);
+        }
       } catch (err) {
         console.log("user action failed");
-        this.$refs.alert.showDismissable("danger", err.error.message);
+        if (err.error && err.error.message) {
+          this.$refs.alert.showDismissable("danger", err.error.message);
+        } else {
+          this.$refs.alert.showDismissable(
+            "danger",
+            "Unable to confirm payment setup, please try again later"
+          );
+        }
       }
       this.formControl.submitDisabled = false;
     },
