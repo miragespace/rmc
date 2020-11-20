@@ -41,6 +41,10 @@ export default {
       }
     } catch (err) {
       Sentry.captureException(err);
+      this.$refs.alert.showDismissable(
+        "danger",
+        "An unexpected error has occured: " + err.message
+      );
     }
   },
 };

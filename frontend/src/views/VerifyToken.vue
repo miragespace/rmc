@@ -6,6 +6,7 @@
 </template>
 
 <script>
+import * as Sentry from "@sentry/browser";
 import Alert from "../components/Alert.vue";
 
 const BASE_URL = process.env.VUE_APP_API_ENDPOINT;
@@ -45,9 +46,10 @@ export default {
         this.$refs.alert.showDismissable("danger", json.error);
       }
     } catch (err) {
+      Sentry.captureException(err);
       this.$refs.alert.showDismissable(
         "danger",
-        "Unable to login, please try again later"
+        "An unexpected error has occured: " + err.message
       );
     }
   },

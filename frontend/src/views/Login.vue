@@ -90,7 +90,7 @@ export default {
       } catch (err) {
         this.$refs.alert.showAlert(
           "danger",
-          "Unable to request login link, please try again later"
+          "An unexpected error has occured: " + err.message
         );
       }
       this.enableSubmit();

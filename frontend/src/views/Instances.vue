@@ -54,7 +54,6 @@ export default {
           for (let inst of instJson.result) {
             this.instances.push(inst);
           }
-          this.show.multi = true;
         } else {
           this.$refs.alert.showDismissable(
             "danger",
@@ -63,6 +62,10 @@ export default {
         }
       } catch (err) {
         Sentry.captureException(err);
+        this.$refs.alert.showDismissable(
+          "danger",
+          "An unexpected error has occured: " + err.message
+        );
       }
     },
     showError(msg) {
