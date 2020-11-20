@@ -1,14 +1,14 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
+import Router from '../router'
 
 Vue.use(Vuex)
 
 const BASE_URL = process.env.VUE_APP_API_ENDPOINT;
-const DEFINED_TOKEN = process.env.VUE_APP_BEARER_TOKEN || '';
 
 export default new Vuex.Store({
     state: {
-        bearerToken: DEFINED_TOKEN
+        bearerToken: localStorage.getItem("token") || ''
     },
     getters: {
         isLogin(state) {
@@ -17,13 +17,19 @@ export default new Vuex.Store({
     },
     mutations: {
         setBearerToken(state, payload) {
-            console.log(payload)
             state.bearerToken = payload.token
+            localStorage.setItem('token', payload.token)
         }
     },
     actions: {
+        logout(context) {
+            context.state.bearerToken = ''
+            localStorage.removeItem('token')
+            Router.push({
+                name: 'Home'
+            })
+        },
         async makeAuthenticatedRequest(context, payload) {
-            console.log(context)
             let method = payload.method || "GET"
             let req = {
                 method: method,

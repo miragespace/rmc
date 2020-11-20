@@ -26,6 +26,7 @@
             >
               {{ p }}
             </b-nav-item>
+            <b-nav-item @click="logout"> Logout </b-nav-item>
           </b-navbar-nav>
         </b-collapse>
       </b-container>
@@ -39,6 +40,11 @@ export default {
     return {
       loggedInNav: ["Instances", "Plans"],
     };
+  },
+  methods: {
+    logout() {
+      this.$store.dispatch("logout");
+    },
   },
 };
 </script>

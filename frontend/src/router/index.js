@@ -21,6 +21,11 @@ const routes = [
         component: () => import('../views/Login.vue')
     },
     {
+        path: '/instances/:id',
+        name: 'Instance',
+        component: () => import('../views/Instance.vue')
+    },
+    {
         path: '/instances',
         name: 'Instances',
         component: () => import('../views/Instances.vue')

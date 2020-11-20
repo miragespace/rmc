@@ -5,11 +5,14 @@
     <b-container>
       <router-view class="mt-4" />
     </b-container>
-    <!-- <div id="nav">
-      <router-link to="/">Home</router-link> |
-      <router-link to="/about">About</router-link>
-    </div>
-    <router-view /> -->
+    <footer class="footer">
+      <b-container>
+        <p class="text-center">
+          Rent a Minecraft Server is not associated with Mojang or any of its
+          products/brands.
+        </p>
+      </b-container>
+    </footer>
   </div>
 </template>
 

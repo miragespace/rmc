@@ -16,14 +16,22 @@
           placeholder="hello@me.com"
         ></b-form-input>
       </b-form-group>
-      <b-button
-        type="submit"
-        variant="primary"
-        :disabled="formControl.submitDisabled"
+      <b-overlay
+        :show="formControl.submitDisabled"
+        rounded
+        opacity="0.6"
+        spinner-small
+        spinner-variant="primary"
+        class="d-inline-block"
       >
-        <b-spinner small v-show="formControl.showSpinner"></b-spinner>
-        {{ formControl.submitButtonText }}
-      </b-button>
+        <b-button
+          type="submit"
+          variant="primary"
+          :disabled="formControl.submitDisabled"
+        >
+          Request Login Link
+        </b-button>
+      </b-overlay>
     </b-form>
   </div>
 </template>
@@ -32,10 +40,6 @@
 import Alert from "../components/Alert.vue";
 
 const BASE_URL = process.env.VUE_APP_API_ENDPOINT;
-const text = {
-  submitNormal: "Request Login Link",
-  submitting: "Requesting",
-};
 
 export default {
   name: "Login",
@@ -48,22 +52,16 @@ export default {
         email: "",
       },
       formControl: {
-        showSpinner: false,
         submitDisabled: false,
-        submitButtonText: "",
       },
     };
   },
   methods: {
     enableSubmit() {
-      this.formControl.submitButtonText = text.submitNormal;
       this.formControl.submitDisabled = false;
-      this.formControl.showSpinner = false;
     },
     disableSubmit() {
-      this.formControl.submitButtonText = text.submitting;
       this.formControl.submitDisabled = true;
-      this.formControl.showSpinner = true;
     },
     async requestLogin(evt) {
       evt.preventDefault();
@@ -97,9 +95,6 @@ export default {
       }
       this.enableSubmit();
     },
-  },
-  async mounted() {
-    this.formControl.submitButtonText = text.submitNormal;
   },
 };
 </script>
