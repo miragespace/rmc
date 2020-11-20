@@ -5,13 +5,14 @@
       v-bind:class="classes"
       v-bind:style="styles"
       dismissible
+      fade
       @dismissed="dismissCountDown = 0"
       @dismiss-count-down="countDownChanged"
       :variant="type"
     >
       {{ message }} <small>({{ dismissCountDown }})</small>
     </b-alert>
-    <b-alert v-model="show" dismissible :variant="type">
+    <b-alert v-model="show" dismissible fade :variant="type">
       {{ message }}
     </b-alert>
   </div>
@@ -62,12 +63,18 @@ export default {
     },
   },
   methods: {
+    hideAlert() {
+      this.dismissCountDown = 0;
+      this.show = false;
+    },
     showAlert(type, message) {
+      this.hideAlert();
       this.type = type;
       this.message = message;
       this.dismissCountDown = this.timeout;
     },
     showDismissable(type, message) {
+      this.hideAlert();
       this.type = type;
       this.message = message;
       this.show = true;

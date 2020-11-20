@@ -31,7 +31,7 @@
             <b-row no-gutters>
               <b-col md="6"></b-col>
               <b-col md="6">
-                <b-form @submit="createSubscription">
+                <b-form @submit="createStripeSubscription">
                   <b-row>
                     <b-col md="5">
                       <b-form-select
@@ -92,7 +92,10 @@
     <Alert ref="alert" />
     <PaymentSetup
       buttonText="Setup and create"
+      :initialMessage="stripe.initialMessage"
+      :handleSubscription="stripe.subscription"
       @paymentSetup="paymentSetup"
+      @subscriptionSetup="subscriptionSetup"
       v-if="formControl.showPaymentSetup"
     />
   </div>
@@ -123,6 +126,13 @@ export default {
   },
   data() {
     return {
+      stripe: {
+        subscription: null,
+        initialMessage: {
+          type: "danger",
+          message: "placeholder",
+        },
+      },
       instance: {
         version: null,
         edition: null,
@@ -143,6 +153,11 @@ export default {
     };
   },
   methods: {
+    delay(ms) {
+      return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+      });
+    },
     enableSubmit() {
       this.formControl.submitDisabled = false;
     },
@@ -151,12 +166,21 @@ export default {
       this.formControl.submitDisabled = true;
     },
     async paymentSetup(paymentMethod) {
-      this.$refs.alert.showAlert("success", "Creating your instance...");
-      await this.createSubscription();
+      console.log("updated payment method");
       console.log(paymentMethod);
+      this.formControl.subscriptionSetup = false;
+      await this.createStripeSubscription();
     },
-    async createSubscription(evt) {
-      evt.preventDefault();
+    async subscriptionSetup(subscription) {
+      console.log("user confirmed");
+      console.log(subscription);
+      this.formControl.subscriptionSetup = false;
+      await this.createSubscription(subscription);
+    },
+    async createStripeSubscription(evt) {
+      if (evt) {
+        evt.preventDefault();
+      }
       this.disableSubmit();
       try {
         let subResp = await this.$store.dispatch({
@@ -178,32 +202,29 @@ export default {
             break;
           }
           case 403: {
-            this.$refs.alert.showAlert(
-              "danger",
-              "Please setup default payment method first"
-            );
+            this.stripe.initialMessage.type = "danger";
+            this.stripe.initialMessage.message =
+              "Please setup default payment method first.";
+            this.stripe.subscription = null;
             this.formControl.showPaymentSetup = true;
             break;
           }
           case 200: {
-            console.log(subJson);
-
-            let stripeResponse = subJson.result.stripeResponse;
-
-            if (stripeResponse.status !== "active") {
-              this.$refs.alert.showDismissable(
-                "danger",
-                "Stripe setup failed!"
-              );
+            let subscription = subJson.result;
+            if (subscription.status !== "active") {
+              // requires user actions
+              this.stripe.initialMessage.type = "danger";
+              this.stripe.initialMessage.message =
+                "Your card requires further actions.";
+              this.stripe.subscription = subscription;
+              this.formControl.showPaymentSetup = true;
             } else {
-              let subscription = subJson.result.subscription;
-              await this.createInstance(subscription);
+              await this.createSubscription(subscription);
             }
             break;
           }
         }
       } catch (err) {
-        console.log(err);
         this.$refs.alert.showAlert(
           "danger",
           "Unable to create instance at the moment, please try again later"
@@ -212,7 +233,31 @@ export default {
       }
       this.enableSubmit();
     },
+    async createSubscription(stripeSubscription) {
+      try {
+        let createResp = await this.$store.dispatch({
+          type: "makeAuthenticatedRequest",
+          method: "PUT",
+          endpoint: "/subscriptions/" + stripeSubscription.id,
+        });
+        let createJson = await createResp.json();
+
+        if (createResp.status !== 200) {
+          this.$refs.alert.showDismissable(
+            "danger",
+            createJson.error + ": " + createJson.messages.join("; ")
+          );
+        } else {
+          await this.createInstance(createJson.result);
+        }
+      } catch (err) {
+        console.log(err);
+        Sentry.captureException(err);
+      }
+    },
     async createInstance(subscription) {
+      this.$refs.alert.showAlert("success", "Creating your instance...");
+      await this.delay(1000);
       try {
         let createResp = await this.$store.dispatch({
           type: "makeAuthenticatedRequest",
@@ -242,6 +287,10 @@ export default {
           );
         }
       } catch (err) {
+        this.$refs.alert.showAlert(
+          "danger",
+          "Unable to create instance at the moment, please try again later"
+        );
         Sentry.captureException(err);
       }
     },
