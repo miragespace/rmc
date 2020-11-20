@@ -133,10 +133,14 @@ func (c *Client) DeleteInstance(ctx context.Context, p *protocol.Instance) error
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot delete instance")
 	}
+	if containerID == "" {
+		// when the instance failed to provision
+		return nil
+	}
 	if err := c.Client.ContainerRemove(ctx, containerID, types.ContainerRemoveOptions{
 		RemoveVolumes: true,
 	}); err != nil {
-		return extErrors.Wrap(err, "Cannot delete container")
+		return extErrors.Wrap(err, "Cannot delete instance")
 	}
 	return nil
 }
@@ -159,7 +163,7 @@ func (c *Client) getContainerID(ctx context.Context, instanceID string) (string,
 	}
 
 	if len(id) == 0 {
-		return "", fmt.Errorf("Cannot find instance with instance ID %s", instanceID)
+		return "", nil
 	}
 
 	return id, nil
@@ -169,6 +173,10 @@ func (c *Client) StopInstance(ctx context.Context, p *protocol.Instance) error {
 	containerID, err := c.getContainerID(ctx, p.GetID())
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot stop instance")
+	}
+	if containerID == "" {
+		// when the instance failed to provision
+		return nil
 	}
 	timeout := time.Second * 15
 	if err := c.Client.ContainerStop(ctx, containerID, &timeout); err != nil {
@@ -181,6 +189,10 @@ func (c *Client) StartInstance(ctx context.Context, p *protocol.Instance) error 
 	containerID, err := c.getContainerID(ctx, p.GetID())
 	if err != nil {
 		return extErrors.Wrap(err, "Cannot start instance")
+	}
+	if containerID == "" {
+		// when the instance failed to provision
+		return nil
 	}
 	if err := c.Client.ContainerStart(ctx, containerID, types.ContainerStartOptions{}); err != nil {
 		return extErrors.Wrap(err, "Cannot start container")

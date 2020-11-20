@@ -233,8 +233,12 @@ func (s *Service) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if current.State != StateStopped {
-			respError = resp.ErrBadRequest().AddMessages("Instance not in 'Stopped' state")
-			return
+			if current.PreviousState == StateProvisioning && current.State == StateError {
+				// allow deletion on failed to provision instance
+			} else {
+				respError = resp.ErrBadRequest().AddMessages("Instance not in 'Stopped' state")
+				return
+			}
 		}
 
 		// trigger history insertion
