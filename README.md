@@ -1,5 +1,9 @@
 # Rent A Minecraft Server
 
+## Deployment
+
+It is now live at [https://netheriteblock.com](https://netheriteblock.com). The branding will be changed soon/
+
 ## Preamble
 
 This is the side project assignment for USFCA CS 601 Fall 2020.
