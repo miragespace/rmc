@@ -18,7 +18,13 @@
       spinner-variant="primary"
       v-show="formControl.cursor !== null"
     >
-      <b-button block variant="info" size="sm" href="#" @click="loadAppend">
+      <b-button
+        block
+        variant="info"
+        size="sm"
+        href="#"
+        @click="delayedLoadAppend"
+      >
         Load previous 10 entries
       </b-button>
     </b-overlay>
@@ -62,9 +68,18 @@ export default {
         setTimeout(resolve, ms);
       });
     },
-    async loadAppend() {
+    async delayedLoadAppend() {
       this.formControl.isLoading = true;
       await this.delay(1000);
+      await this.doLoadAppend();
+      this.formControl.isLoading = false;
+    },
+    async loadAppend() {
+      this.formControl.isLoading = true;
+      await this.doLoadAppend();
+      this.formControl.isLoading = false;
+    },
+    async doLoadAppend() {
       let ep = "/subscriptions";
       if (this.formControl.cursor) {
         let params = {
@@ -102,7 +117,6 @@ export default {
           "An unexpected error has occured: " + err.message
         );
       }
-      this.formControl.isLoading = false;
     },
   },
   async mounted() {
