@@ -13,6 +13,7 @@ import { Vue as VueIntegration } from "@sentry/integrations";
 Vue.config.productionTip = false
 
 Sentry.init({
+    release: process.env.VUE_APP_GIT_COMMIT,
     dsn: process.env.VUE_APP_SENTRY_DSN,
     integrations: [new VueIntegration({ Vue, attachProps: true, logErrors: true })],
 });
