@@ -2,8 +2,8 @@
   <div>
     <b-navbar toggleable="lg" type="dark" variant="primary">
       <b-container>
-        <b-navbar-brand :to="{ name: 'Home' }"
-          >Rent a Minecraft Server
+        <b-navbar-brand :to="{ name: 'Home' }">
+          Rent a Minecraft Server
         </b-navbar-brand>
         <b-navbar-toggle target="nav-collapse"></b-navbar-toggle>
         <b-collapse id="nav-collapse" is-nav>
@@ -13,7 +13,7 @@
               :to="{ name: 'Login' }"
               :active="$route.name == 'Login'"
             >
-              Login
+              Login/Register
             </b-nav-item>
           </b-navbar-nav>
 
