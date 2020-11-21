@@ -146,14 +146,14 @@ export default {
         version: null,
         edition: null,
       },
-      // TODO: load from server
       editions: [
         { text: "Java", value: "java" },
         { text: "Bedrock", value: "bedrock" },
       ],
+      // TODO: load supported versions from server
       versions: {
-        java: ["1.16"],
-        bedrock: ["1.1"],
+        java: ["1.16.1"],
+        bedrock: ["1.16.1"],
       },
       formControl: {
         showPaymentSetup: false,
@@ -234,11 +234,11 @@ export default {
           }
         }
       } catch (err) {
+        Sentry.captureException(err);
         this.$refs.alert.showAlert(
           "danger",
-          "Unable to create instance at the moment, please try again later"
+          "Unable to create Stripe subscription at the moment, please try again later"
         );
-        Sentry.captureException(err);
       }
       this.enableSubmit();
     },
@@ -260,8 +260,11 @@ export default {
           await this.createInstance(createJson.result);
         }
       } catch (err) {
-        console.log(err);
         Sentry.captureException(err);
+        this.$refs.alert.showAlert(
+          "danger",
+          "Unable to create subscription at the moment, please try again later"
+        );
       }
     },
     async createInstance(subscription) {
@@ -280,6 +283,8 @@ export default {
         });
         let createJson = await createResp.json();
 
+        // TODO: detect no available hosts
+
         if (createResp.status == 200) {
           let instance = createJson.result;
 
@@ -296,11 +301,11 @@ export default {
           );
         }
       } catch (err) {
+        Sentry.captureException(err);
         this.$refs.alert.showAlert(
           "danger",
           "Unable to create instance at the moment, please try again later"
         );
-        Sentry.captureException(err);
       }
     },
   },

@@ -19,6 +19,13 @@ export default {
   data() {
     return {};
   },
+  methods: {
+    delay(ms) {
+      return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+      });
+    },
+  },
   async mounted() {
     let uid = this.$route.params.uid;
     let token = this.$route.params.token;
@@ -33,6 +40,8 @@ export default {
           "success",
           "Login successful! Redirecting you to instances page..."
         );
+
+        await this.delay(2000);
 
         await this.$store.commit({
           type: "setBearerToken",
@@ -53,6 +62,5 @@ export default {
       );
     }
   },
-  methods: {},
 };
 </script>
