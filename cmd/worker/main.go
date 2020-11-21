@@ -14,6 +14,7 @@ import (
 	"github.com/zllovesuki/rmc/host"
 	"github.com/zllovesuki/rmc/host/docker"
 	"github.com/zllovesuki/rmc/host/worker"
+	"github.com/zllovesuki/rmc/util"
 
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
@@ -80,6 +81,11 @@ func main() {
 		)
 	}
 
+	hostName := os.Getenv("HOST_NAME")
+	if len(hostName) == 0 {
+		logger.Fatal("Host Name must be specified")
+	}
+
 	amqpBroker, err := broker.NewAMQPBroker(logger, os.Getenv("AMQP_URI"))
 	if err != nil {
 		logger.Fatal("Cannot connect to Broker",
@@ -121,14 +127,20 @@ func main() {
 		)
 	}
 
-	// TODO: define it from env variables
-	// TODO: get server IP
-	if len(os.Getenv("HOST_NAME")) == 0 {
-		log.Fatal("Host Name must be specified")
-	}
 	currentHost := host.Host{
-		Name:     os.Getenv("HOST_NAME"),
+		Name:     hostName,
 		Capacity: 20,
+	}
+	logger = logger.With(zap.String("HostName", hostName))
+
+	hostIP, err := util.GetPublicIP()
+	if err != nil {
+		logger.Fatal("Unable to get host public IP",
+			zap.Error(err),
+		)
+	}
+	if len(hostIP) == 0 {
+		logger.Fatal("Public IP is empty")
 	}
 
 	controller, err := worker.NewController(worker.Options{
@@ -137,7 +149,7 @@ func main() {
 		Producer: producer,
 		Consumer: consumer,
 		Host:     currentHost,
-		HostIP:   "127.0.0.1",
+		HostIP:   hostIP,
 	})
 	if err != nil {
 		logger.Fatal("Cannot initialize Controller",
