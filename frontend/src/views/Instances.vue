@@ -2,7 +2,7 @@
   <div>
     <Alert ref="alert" :timeout="5" :toast="true" />
     <b-row v-for="(row, rowIndex) in instancesRC" :key="rowIndex" class="mb-4">
-      <b-col v-for="instance in row" :key="instance.id" md="4">
+      <b-col v-for="instance in row" :key="instance.id" lg="4">
         <Instance
           @error="showError"
           @success="showSuccess"
@@ -111,7 +111,6 @@ export default {
           );
         }
       } catch (err) {
-        console.log(err);
         Sentry.captureException(err);
         this.$refs.alert.showDismissable(
           "danger",

@@ -6,7 +6,7 @@
       :key="rowIndex"
       class="mb-4"
     >
-      <b-col v-for="subscription in row" :key="subscription.id" md="6">
+      <b-col v-for="subscription in row" :key="subscription.id" lg="6">
         <Subscription :subscription="subscription" />
       </b-col>
     </b-row>

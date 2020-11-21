@@ -33,7 +33,7 @@
           <b-card-sub-title class="mb-2 mt-2">
             <b-icon icon="power"></b-icon> Lifecycle Control
           </b-card-sub-title>
-          <b-list-group flush>
+          <b-list-group horizontal="lg">
             <b-list-group-item href="#" @click="lifeCycleControl('Start')">
               <b-icon icon="play-fill"></b-icon>
               Start
@@ -44,7 +44,7 @@
             </b-list-group-item>
           </b-list-group>
 
-          <b-card-sub-title class="mb-2 mt-2" v-if="showAddr">
+          <b-card-sub-title class="mb-2 mt-4" v-if="showAddr">
             <b-icon icon="view-stacked"></b-icon> IP and Port
           </b-card-sub-title>
           <b-list-group flush v-if="showAddr">
@@ -74,7 +74,7 @@
             </b-tooltip>
           </b-list-group>
 
-          <b-card-sub-title class="mb-2 mt-2">
+          <b-card-sub-title class="mb-2 mt-4">
             <b-icon icon="cpu"></b-icon> Specs
           </b-card-sub-title>
           <b-list-group flush>
@@ -93,7 +93,7 @@
             </b-list-group-item>
           </b-list-group>
 
-          <b-card-sub-title class="mb-2 mt-2">
+          <b-card-sub-title class="mb-2 mt-4">
             <b-icon icon="three-dots"></b-icon> More options
           </b-card-sub-title>
           <b-list-group flush>

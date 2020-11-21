@@ -35,11 +35,11 @@
             </b-list-group>
 
             <b-row no-gutters v-if="showCreate">
-              <b-col md="6"></b-col>
-              <b-col md="6">
+              <b-col lg="6"></b-col>
+              <b-col lg="6">
                 <b-form @submit="createStripeSubscription">
                   <b-row>
-                    <b-col md="5">
+                    <b-col lg="5" class="mb-2">
                       <b-form-select
                         size="sm"
                         v-model="instance.edition"
@@ -53,7 +53,7 @@
                         </template>
                       </b-form-select>
                     </b-col>
-                    <b-col md="5">
+                    <b-col lg="5" class="mb-2">
                       <b-form-select
                         size="sm"
                         v-model="instance.version"
@@ -67,7 +67,7 @@
                         </template>
                       </b-form-select>
                     </b-col>
-                    <b-col md="2">
+                    <b-col lg="2" class="mb-2">
                       <b-overlay
                         :show="formControl.submitDisabled"
                         rounded
