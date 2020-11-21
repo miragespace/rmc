@@ -41,11 +41,6 @@
               Current Period End:
               <b>{{ new Date(data.periodEnd).toLocaleDateString() }}</b>
             </b-list-group-item>
-          </b-list-group>
-
-          <Plan :plan="data.plan" :showCreate="false" />
-
-          <b-list-group flush>
             <b-list-group-item
               :to="{ name: 'Subscription', params: { id: data.id } }"
               v-if="!isSingle"
@@ -54,6 +49,8 @@
               Details
             </b-list-group-item>
           </b-list-group>
+
+          <Plan :plan="data.plan" :showCreate="false" v-if="data.plan" />
         </b-card-body>
         <template #footer>
           <div>
@@ -193,10 +190,18 @@ export default {
           method: "GET",
           endpoint: this.resLink,
         });
+        let subJson = await subResp.json();
         if (subResp.status === 200) {
-          let subJson = await subResp.json();
           this.data = subJson.result;
           await this.getUsage();
+        } else {
+          this.$emit(
+            "error",
+            "Unable to load subscription: " +
+              subJson.error +
+              ": " +
+              subJson.messages.join(" - ")
+          );
         }
       } catch (err) {
         Sentry.captureException(err);

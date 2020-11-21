@@ -11,6 +11,18 @@
         />
       </b-col>
     </b-row>
+    <b-overlay
+      :show="formControl.isLoading"
+      rounded
+      opacity="0.6"
+      spinner-small
+      spinner-variant="primary"
+      v-show="formControl.cursor !== null"
+    >
+      <b-button block variant="info" size="sm" href="#" @click="loadAppend">
+        Load previous 10 entries
+      </b-button>
+    </b-overlay>
   </div>
 </template>
 
@@ -28,6 +40,10 @@ export default {
   data() {
     return {
       instances: [],
+      formControl: {
+        isLoading: false,
+        cursor: null,
+      },
     };
   },
   computed: {
@@ -42,17 +58,36 @@ export default {
     },
   },
   methods: {
-    async loadInstances() {
+    delay(ms) {
+      return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+      });
+    },
+    async loadAppend() {
+      this.formControl.isLoading = true;
+      await this.delay(1000);
+      let ep = "/instances";
+      if (this.formControl.cursor) {
+        let params = {
+          before: this.formControl.cursor,
+        };
+        ep += "?" + new URLSearchParams(params).toString();
+      }
       try {
         let instResp = await this.$store.dispatch({
           type: "makeAuthenticatedRequest",
           method: "GET",
-          endpoint: "/instances",
+          endpoint: ep,
         });
         let instJson = await instResp.json();
         if (instResp.status == 200) {
-          for (let inst of instJson.result) {
-            this.instances.push(inst);
+          this.instances.push(...instJson.result);
+
+          if (instJson.result.length > 0) {
+            this.formControl.cursor =
+              instJson.result[instJson.result.length - 1].createdAt;
+          } else {
+            this.formControl.cursor = null;
           }
         } else {
           this.$refs.alert.showDismissable(
@@ -61,12 +96,14 @@ export default {
           );
         }
       } catch (err) {
+        console.log(err);
         Sentry.captureException(err);
         this.$refs.alert.showDismissable(
           "danger",
           "An unexpected error has occured: " + err.message
         );
       }
+      this.formControl.isLoading = false;
     },
     showError(msg) {
       this.$refs.alert.showAlert("danger", msg);
@@ -81,7 +118,7 @@ export default {
     },
   },
   async mounted() {
-    await this.loadInstances();
+    await this.loadAppend();
   },
 };
 </script>

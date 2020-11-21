@@ -10,19 +10,18 @@
         <Subscription :subscription="subscription" />
       </b-col>
     </b-row>
-    <div class="text-center" v-show="formControl.cursor !== null">
-      <b-overlay
-        :show="formControl.isLoading"
-        rounded
-        opacity="0.6"
-        spinner-small
-        spinner-variant="primary"
-      >
-        <b-button block variant="info" size="sm" href="#" @click="loadAppend">
-          Load previous 10 entries
-        </b-button>
-      </b-overlay>
-    </div>
+    <b-overlay
+      :show="formControl.isLoading"
+      rounded
+      opacity="0.6"
+      spinner-small
+      spinner-variant="primary"
+      v-show="formControl.cursor !== null"
+    >
+      <b-button block variant="info" size="sm" href="#" @click="loadAppend">
+        Load previous 10 entries
+      </b-button>
+    </b-overlay>
   </div>
 </template>
 
@@ -61,14 +60,6 @@ export default {
     delay(ms) {
       return new Promise((resolve) => {
         setTimeout(resolve, ms);
-      });
-    },
-    showSubscription(sub) {
-      this.$router.push({
-        name: "Subscription",
-        params: {
-          id: sub.id,
-        },
       });
     },
     async loadAppend() {

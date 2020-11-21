@@ -240,6 +240,8 @@ export default {
           return "secondary";
         case "Error":
           return "danger";
+        case "Removed":
+          return "dark";
         default:
           return "warning";
       }
@@ -331,9 +333,17 @@ export default {
           method: "GET",
           endpoint: this.resLink,
         });
+        let instJson = await instResp.json();
         if (instResp.status === 200) {
-          let instJson = await instResp.json();
           this.data = instJson.result;
+        } else {
+          this.$emit(
+            "error",
+            "Unable to load instance: " +
+              instJson.error +
+              ": " +
+              instJson.messages.join(" - ")
+          );
         }
       } catch (err) {
         Sentry.captureException(err);
