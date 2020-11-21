@@ -121,6 +121,14 @@ export default {
   },
   async mounted() {
     await this.loadAppend();
+    if (
+      this.subscriptions.reduce(
+        (acc, sub) => (acc += sub.state === "Active" ? 1 : 0),
+        0
+      ) === 0
+    ) {
+      this.$refs.alert.showAlert("info", "You have no active subscriptions.");
+    }
   },
 };
 </script>

@@ -132,6 +132,9 @@ export default {
   },
   async mounted() {
     await this.loadAppend();
+    if (this.instances.length === 0) {
+      this.$refs.alert.showAlert("info", "You have no instances.");
+    }
   },
 };
 </script>
