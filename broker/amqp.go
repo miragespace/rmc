@@ -51,6 +51,10 @@ func (a *AMQPBroker) Producer() (broker.Producer, error) {
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot create producer channel")
 	}
+
+	a.captureConnectionCloseError()
+	a.captureChannelCloseError(producerChannel)
+
 	if err := a.setupExchanges(producerChannel); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot declare as Producer")
 	}
@@ -66,6 +70,10 @@ func (a *AMQPBroker) Consumer() (broker.Consumer, error) {
 	if err != nil {
 		return nil, extErrors.Wrap(err, "Cannot create consumer channel")
 	}
+
+	a.captureConnectionCloseError()
+	a.captureChannelCloseError(consumerChannel)
+
 	if err := a.setupExchanges(consumerChannel); err != nil {
 		return nil, extErrors.Wrap(err, "Cannot declare as Consumer")
 	}
@@ -73,6 +81,32 @@ func (a *AMQPBroker) Consumer() (broker.Consumer, error) {
 		consumerChannel: consumerChannel,
 		logger:          a.logger.With(zap.String("Role", "Consumer")),
 	}, nil
+}
+
+func (a *AMQPBroker) captureConnectionCloseError() {
+	closeErrChan := make(chan *amqp.Error)
+	a.connection.NotifyClose(closeErrChan)
+	go func(ch chan *amqp.Error) {
+		err := <-ch
+		if err != nil {
+			a.logger.Fatal("AMQP connection closed unexpectedly",
+				zap.Error(err),
+			)
+		}
+	}(closeErrChan)
+}
+
+func (a *AMQPBroker) captureChannelCloseError(conn *amqp.Channel) {
+	closeErrChan := make(chan *amqp.Error)
+	conn.NotifyClose(closeErrChan)
+	go func(ch chan *amqp.Error) {
+		err := <-ch
+		if err != nil {
+			a.logger.Fatal("AMQP channel closed unexpectedly",
+				zap.Error(err),
+			)
+		}
+	}(closeErrChan)
 }
 
 func (a *AMQPBroker) setupExchanges(channel *amqp.Channel) error {
@@ -186,6 +220,7 @@ func (a *AMQPBroker) SendHeartbeat(b *protocol.Heartbeat) error {
 	return nil
 }
 
+// SendTask signals API background task instance to do work
 func (a *AMQPBroker) SendTask(taskType spec.TaskType, p *protocol.Task) error {
 	protoBytes, err := proto.Marshal(p)
 	if err != nil {
@@ -371,6 +406,7 @@ func (a *AMQPBroker) ReceiveHeartbeat(ctx context.Context, processor string) (<-
 	return hChan, nil
 }
 
+// ReceiveTask will consumer tasks from API service
 func (a *AMQPBroker) ReceiveTask(ctx context.Context, taskType spec.TaskType) (<-chan *protocol.Task, error) {
 	name := "process_" + asyncTaskExchange + "_" + string(taskType)
 	msgChan, err := a.getMsgChannel(name, asyncTaskExchange, string(taskType))
