@@ -60,6 +60,7 @@ func main() {
 
 	// Initialize sentry for error reporting
 	if err := sentry.Init(sentry.ClientOptions{
+		Release:     Version,
 		Environment: string(authEnvironment),
 		Debug:       authEnvironment == auth.EnvDevelopment,
 	}); err != nil {
