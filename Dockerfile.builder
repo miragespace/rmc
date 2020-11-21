@@ -1,4 +1,6 @@
-FROM golang:1.15.5-buster
+FROM golang:1.15.5-alpine
+
+RUN apk add git
 
 WORKDIR /go/src/github.com/zllovesuki/rmc
 COPY .git .
