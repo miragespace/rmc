@@ -2,8 +2,8 @@ name = "rmc"
 type = "webpack"
 account_id = "6259e0f35111d6c3f7b6aa38ded6eccc"
 workers_dev = true
-route = ""
-zone_id = ""
+route = "netheriteblock.com/*"
+zone_id = "86e4ddc9d4035041c9f24b4f44ed859c"
 
 [site]
 bucket = "dist"
