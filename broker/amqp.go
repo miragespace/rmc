@@ -240,24 +240,21 @@ func (a *AMQPBroker) ReceiveControlRequest(ctx context.Context, hostIdentifier s
 	}
 	rChan := make(chan *protocol.ControlRequest)
 	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case d := <-msgChan:
-				var req protocol.ControlRequest
-				if err := proto.Unmarshal(d.Body, &req); err != nil {
-					d.Nack(false, false)
-					continue
-				}
-				rChan <- &req
-				if err := d.Ack(false); err != nil {
-					a.logger.Error("Unable to ack control request message",
-						zap.Error(err),
-					)
-				}
+		for d := range msgChan {
+			var req protocol.ControlRequest
+			if err := proto.Unmarshal(d.Body, &req); err != nil {
+				d.Nack(false, false)
+				continue
+			}
+			rChan <- &req
+			if err := d.Ack(false); err != nil {
+				a.logger.Error("Unable to ack control request message",
+					zap.Error(err),
+					zap.Any("Message", d),
+				)
 			}
 		}
+		a.logger.Info("Control request message channel closed")
 	}()
 	return rChan, nil
 }
@@ -271,24 +268,21 @@ func (a *AMQPBroker) ReceiveProvisionRequest(ctx context.Context, hostIdentifier
 	}
 	rChan := make(chan *protocol.ProvisionRequest)
 	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case d := <-msgChan:
-				var req protocol.ProvisionRequest
-				if err := proto.Unmarshal(d.Body, &req); err != nil {
-					d.Nack(false, false)
-					continue
-				}
-				rChan <- &req
-				if err := d.Ack(false); err != nil {
-					a.logger.Error("Unable to ack provision request message",
-						zap.Error(err),
-					)
-				}
+		for d := range msgChan {
+			var req protocol.ProvisionRequest
+			if err := proto.Unmarshal(d.Body, &req); err != nil {
+				d.Nack(false, false)
+				continue
+			}
+			rChan <- &req
+			if err := d.Ack(false); err != nil {
+				a.logger.Error("Unable to ack provision request message",
+					zap.Error(err),
+					zap.Any("Message", d),
+				)
 			}
 		}
+		a.logger.Info("Provision request message channel closed")
 	}()
 	return rChan, nil
 }
@@ -302,24 +296,21 @@ func (a *AMQPBroker) ReceiveControlReply(ctx context.Context) (<-chan *protocol.
 	}
 	rChan := make(chan *protocol.ControlReply)
 	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case d := <-msgChan:
-				var req protocol.ControlReply
-				if err := proto.Unmarshal(d.Body, &req); err != nil {
-					d.Nack(false, false)
-					continue
-				}
-				rChan <- &req
-				if err := d.Ack(false); err != nil {
-					a.logger.Error("Unable to ack control reply message",
-						zap.Error(err),
-					)
-				}
+		for d := range msgChan {
+			var req protocol.ControlReply
+			if err := proto.Unmarshal(d.Body, &req); err != nil {
+				d.Nack(false, false)
+				continue
+			}
+			rChan <- &req
+			if err := d.Ack(false); err != nil {
+				a.logger.Error("Unable to ack control reply message",
+					zap.Error(err),
+					zap.Any("Message", d),
+				)
 			}
 		}
+		a.logger.Info("Control reply message channel closed")
 	}()
 	return rChan, nil
 }
@@ -333,24 +324,21 @@ func (a *AMQPBroker) ReceiveProvisionReply(ctx context.Context) (<-chan *protoco
 	}
 	rChan := make(chan *protocol.ProvisionReply)
 	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case d := <-msgChan:
-				var req protocol.ProvisionReply
-				if err := proto.Unmarshal(d.Body, &req); err != nil {
-					d.Nack(false, false)
-					continue
-				}
-				rChan <- &req
-				if err := d.Ack(false); err != nil {
-					a.logger.Error("Unable to ack provision reply message",
-						zap.Error(err),
-					)
-				}
+		for d := range msgChan {
+			var req protocol.ProvisionReply
+			if err := proto.Unmarshal(d.Body, &req); err != nil {
+				d.Nack(false, false)
+				continue
+			}
+			rChan <- &req
+			if err := d.Ack(false); err != nil {
+				a.logger.Error("Unable to ack provision reply message",
+					zap.Error(err),
+					zap.Any("Message", d),
+				)
 			}
 		}
+		a.logger.Info("Provision reply message channel closed")
 	}()
 	return rChan, nil
 }
@@ -364,24 +352,21 @@ func (a *AMQPBroker) ReceiveHeartbeat(ctx context.Context, processor string) (<-
 	}
 	hChan := make(chan *protocol.Heartbeat)
 	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case d := <-msgChan:
-				var req protocol.Heartbeat
-				if err := proto.Unmarshal(d.Body, &req); err != nil {
-					d.Nack(false, false)
-					continue
-				}
-				hChan <- &req
-				if err := d.Ack(false); err != nil {
-					a.logger.Error("Unable to ack heartbeat message",
-						zap.Error(err),
-					)
-				}
+		for d := range msgChan {
+			var req protocol.Heartbeat
+			if err := proto.Unmarshal(d.Body, &req); err != nil {
+				d.Nack(false, false)
+				continue
+			}
+			hChan <- &req
+			if err := d.Ack(false); err != nil {
+				a.logger.Error("Unable to ack heartbeat message",
+					zap.Error(err),
+					zap.Any("Message", d),
+				)
 			}
 		}
+		a.logger.Info("Heartbeat message channel closed")
 	}()
 	return hChan, nil
 }
@@ -394,24 +379,21 @@ func (a *AMQPBroker) ReceiveTask(ctx context.Context, taskType spec.TaskType) (<
 	}
 	tChan := make(chan *protocol.Task)
 	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case d := <-msgChan:
-				var req protocol.Task
-				if err := proto.Unmarshal(d.Body, &req); err != nil {
-					d.Nack(false, false)
-					continue
-				}
-				tChan <- &req
-				if err := d.Ack(false); err != nil {
-					a.logger.Error("Unable to ack heartbeat message",
-						zap.Error(err),
-					)
-				}
+		for d := range msgChan {
+			var req protocol.Task
+			if err := proto.Unmarshal(d.Body, &req); err != nil {
+				d.Nack(false, false)
+				continue
+			}
+			tChan <- &req
+			if err := d.Ack(false); err != nil {
+				a.logger.Error("Unable to ack heartbeat message",
+					zap.Error(err),
+					zap.Any("Message", d),
+				)
 			}
 		}
+		a.logger.Info("Task message channel closed")
 	}()
 	return tChan, nil
 }
