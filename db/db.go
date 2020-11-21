@@ -58,8 +58,8 @@ func New(option Options) (*gorm.DB, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "Cannot get the connection pool")
 	}
-	pool.SetMaxIdleConns(1)
-	pool.SetMaxOpenConns(20)
+	pool.SetMaxIdleConns(5)
+	pool.SetMaxOpenConns(100)
 	pool.SetConnMaxLifetime(time.Hour)
 	return db, nil
 }
