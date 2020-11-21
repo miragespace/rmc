@@ -1,4 +1,4 @@
-.env.production
 crdb/
 designs/
 frontend
+.env.*

@@ -14,9 +14,9 @@ builder:
 	docker build -t rmc-builder -f Dockerfile.builder .
 
 image:
-	docker build -t rmc-api ./cmd/api
-	docker build -t rmc-task ./cmd/task
-	docker build -t rmc-worker ./cmd/worker
+	docker build -t rachel.sh/miragespace/rmc-api ./cmd/api
+	docker build -t rachel.sh/miragespace/rmc-task ./cmd/task
+	docker build -t rachel.sh/miragespace/rmc-worker ./cmd/worker
 
 multi: builder image
 	docker-compose up -f docker-compose-multi.yml --remove-orphans
