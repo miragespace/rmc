@@ -4,8 +4,9 @@
       <template #header>hello fellow miners</template>
 
       <template #lead>
-        Rent a Minecraft Server provides you with the most affordable Minecraft
-        server options. Only playing on the weekends? Only pay for the weekend!
+        {{ $store.state.brandName }} provides you with the most affordable
+        Minecraft server options. Only playing on the weekends? Only pay for the
+        weekend!
       </template>
 
       <hr class="my-4" />

@@ -3,7 +3,7 @@ module.exports = {
         config
             .plugin('html')
             .tap(args => {
-                args[0].title = "Rent a Minecraft Server"
+                args[0].title = "RMC"
                 return args
             })
     }

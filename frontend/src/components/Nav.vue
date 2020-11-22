@@ -1,9 +1,9 @@
 <template>
   <div>
-    <b-navbar toggleable="lg" type="dark" variant="primary">
+    <b-navbar toggleable="lg" type="dark" variant="dark">
       <b-container>
         <b-navbar-brand :to="{ name: 'Home' }">
-          Rent a Minecraft Server
+          {{ $store.state.brandName }}
         </b-navbar-brand>
         <b-navbar-toggle target="nav-collapse"></b-navbar-toggle>
         <b-collapse id="nav-collapse" is-nav>

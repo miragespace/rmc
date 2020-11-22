@@ -8,6 +8,7 @@ const BASE_URL = process.env.VUE_APP_API_ENDPOINT;
 
 export default new Vuex.Store({
     state: {
+        brandName: process.env.VUE_APP_BRAND_NAME || 'RMC',
         bearerToken: localStorage.getItem("token") || ''
     },
     getters: {
