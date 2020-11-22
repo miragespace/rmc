@@ -281,19 +281,14 @@ func main() {
 	authenticated.Mount("/subscriptions", subscriptionRouter.Router())
 	authenticated.Mount("/hosts", hostRouter.Router())
 
-	// TODO: authentication
+	// internal router listens to a different port
 	internal := chi.NewRouter()
 	internal.Mount("/instances", instanceRouter.AdminRouter())
 	internal.Mount("/subscriptions", subscriptionRouter.AdminRouter())
-
-	r.Mount("/internal", internal)
-
-	// For application insights
-	r.Mount("/debug", middleware.Profiler())
+	internal.Mount("/debug", middleware.Profiler())
 
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// TODO: redirect user to frontend
-		fmt.Fprintf(w, "Hello World!")
+		http.Redirect(w, r, os.Getenv("SITE_URL"), 302)
 	})
 
 	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
@@ -309,6 +304,11 @@ func main() {
 		Addr:    ":42069",
 	}
 
+	internalSrv := &http.Server{
+		Handler: internal,
+		Addr:    ":8888",
+	}
+
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
@@ -319,6 +319,15 @@ func main() {
 			)
 		}
 	}()
+
+	go func() {
+		if err := internalSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal("Unable to listen for internal routes",
+				zap.Error(err),
+			)
+		}
+	}()
+
 	logger.Info("API Started")
 
 	<-c
@@ -327,5 +336,8 @@ func main() {
 
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Fatal("Server Shutdown Failed", zap.Error(err))
+	}
+	if err := internalSrv.Shutdown(ctx); err != nil {
+		logger.Fatal("Internal Router Shutdown Failed", zap.Error(err))
 	}
 }
