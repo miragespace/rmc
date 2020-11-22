@@ -7,9 +7,10 @@
     </b-container>
     <footer class="footer mt-2">
       <b-container>
-        <p class="text-center">
+        <p class="text-center small">
           {{ $store.state.brandName }} is not associated with Mojang or any of
-          its products/brands.
+          its products/brands. "Minecraft" is a trademark of Mojang Synergies
+          AB.
         </p>
       </b-container>
     </footer>
