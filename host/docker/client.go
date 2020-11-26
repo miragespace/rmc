@@ -97,6 +97,11 @@ func (c *Client) ProvisionInstance(ctx context.Context, p *protocol.Instance) (i
 		return 0, extErrors.Wrap(err, "Unable to create port")
 	}
 
+	memMB, err := strconv.ParseInt(instanceParams["RAM"], 10, 64)
+	if err != nil {
+		return 0, extErrors.New("instanceParams.RAM is not a number")
+	}
+
 	portBinding := nat.PortMap{containerPort: []nat.PortBinding{hostBinding}}
 
 	resp, err := c.Client.ContainerCreate(ctx,
@@ -112,6 +117,12 @@ func (c *Client) ProvisionInstance(ctx context.Context, p *protocol.Instance) (i
 		},
 		&container.HostConfig{
 			PortBindings: portBinding,
+			Resources: container.Resources{
+				// TODO: make helper functions
+				NanoCPUs:   3 * 100000 * 10000,
+				Memory:     (memMB + 1024) * 1024 * 1024, // allow for overhead
+				MemorySwap: (memMB + 1024) * 1024 * 1024,
+			},
 		},
 		nil, // network config
 		managedInstancePrefix+p.GetID(),
