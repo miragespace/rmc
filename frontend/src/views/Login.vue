@@ -76,7 +76,7 @@ export default {
           },
           body: JSON.stringify(this.form),
         };
-        let resp = await fetch(BASE_URL + "/customers", req);
+        let resp = await fetch(BASE_URL + "/auth/requestLogin", req);
 
         if (resp.status == 204) {
           this.$refs.alert.showAlert(

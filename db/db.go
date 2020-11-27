@@ -61,5 +61,6 @@ func New(option Options) (*gorm.DB, error) {
 	pool.SetMaxIdleConns(5)
 	pool.SetMaxOpenConns(100)
 	pool.SetConnMaxLifetime(time.Hour)
+	pool.SetConnMaxIdleTime(time.Minute)
 	return db, nil
 }

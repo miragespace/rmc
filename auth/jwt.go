@@ -11,20 +11,56 @@ import (
 )
 
 var bearerPrefix = "Bearer "
+var jwtSigningMethod = jwt.SigningMethodHS256
+
+type RefreshClaim struct {
+	jwt.StandardClaims
+	ID string `json:"id"`
+}
 
 // CreateTokenFromClaims will create a signed jwt token that contains the given Claims
 func (a *Auth) CreateTokenFromClaims(claims Claims) (string, error) {
-	var expirationTime time.Time
-	if a.Environment == EnvDevelopment {
-		expirationTime = time.Now().Add(time.Hour * 24)
-	} else {
-		expirationTime = time.Now().Add(time.Minute * 30)
-	}
+	expirationTime := time.Now().Add(time.Minute * 15)
 	claims.StandardClaims = jwt.StandardClaims{
 		ExpiresAt: expirationTime.Unix(),
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token := jwt.NewWithClaims(jwtSigningMethod, claims)
 	return token.SignedString(a.jwtKey)
+}
+
+func (a *Auth) CreateRefreshTokenFromClaims(claims Claims) (string, error) {
+	expirationTime := time.Now().Add(time.Hour * 24)
+	refresh := RefreshClaim{
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: expirationTime.Unix(),
+		},
+		ID: claims.ID,
+	}
+	token := jwt.NewWithClaims(jwtSigningMethod, refresh)
+	return token.SignedString(a.jwtKey)
+}
+
+func (a *Auth) VerifyRefreshToken(token string) (*RefreshClaim, error) {
+	claims := &RefreshClaim{}
+	jwtToken, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
+		return a.jwtKey, nil
+	})
+	if err != nil {
+		if err == jwt.ErrSignatureInvalid {
+			return nil, nil
+		}
+		if _, ok := err.(*jwt.ValidationError); ok {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if jwtToken.Method != jwtSigningMethod {
+		return nil, nil
+	}
+	if !jwtToken.Valid {
+		return nil, nil
+	}
+	return claims, nil
 }
 
 func (a *Auth) verifyToken(token string) (*Claims, error) {
@@ -40,6 +76,9 @@ func (a *Auth) verifyToken(token string) (*Claims, error) {
 			return nil, nil
 		}
 		return nil, err
+	}
+	if jwtToken.Method != jwtSigningMethod {
+		return nil, nil
 	}
 	if !jwtToken.Valid {
 		return nil, nil
