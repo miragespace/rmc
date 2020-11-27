@@ -132,6 +132,12 @@ func main() {
 	}
 	defer amqpBroker.Close()
 
+	// frontendOrigin for email and API CORS
+	frontendOrigin := os.Getenv("SITE_URL")
+	if len(frontendOrigin) == 0 {
+		logger.Fatal("SITE_URL must be set. For example: https://mysite.com (without trailing slash)")
+	}
+
 	// Initialize authentication manager
 	smtpAuth := smtp.PlainAuth("", os.Getenv("SMTP_USERNAME"), os.Getenv("SMTP_PASSWORD"), os.Getenv("SMTP_HOST"))
 	auth, err := auth.New(auth.Options{
@@ -147,7 +153,7 @@ func main() {
 		EmailOption: auth.EmailOption{
 			Name: os.Getenv("SITE_NAME"),
 			LinkGenerator: func(uid, token string) string {
-				return fmt.Sprintf("%s/login/%s/%s", os.Getenv("SITE_URL"), uid, token)
+				return fmt.Sprintf("%s/login/%s/%s", frontendOrigin, uid, token)
 			},
 		},
 	})
@@ -262,9 +268,7 @@ func main() {
 	r := chi.NewRouter()
 
 	r.Use(cors.Handler(cors.Options{
-		AllowOriginFunc: func(r *http.Request, origin string) bool {
-			return true
-		},
+		AllowedOrigins:   []string{frontendOrigin},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
@@ -272,11 +276,12 @@ func main() {
 	}))
 	r.Use(util.Recovery(logger))
 
-	r.Mount("/customers", customerRouter.Router())
+	r.Mount("/auth", customerRouter.AuthRouter())
 
 	authMiddleware := chi.Chain(auth.Middleware(), auth.ClaimCheck())
 	authenticated := r.With(authMiddleware...)
 
+	authenticated.Mount("/customers", customerRouter.Router())
 	authenticated.Mount("/instances", instanceRouter.Router())
 	authenticated.Mount("/subscriptions", subscriptionRouter.Router())
 	authenticated.Mount("/hosts", hostRouter.Router())

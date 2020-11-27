@@ -74,12 +74,84 @@ func (s *Service) requestLogin(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type refreshRequest struct {
+	RefreshToken string `json:"refreshToken"`
+}
+
+func (s *Service) refreshSession(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req refreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		resp.WriteError(w, r, resp.ErrInvalidJson())
+		return
+	}
+
+	refresh, err := s.Auth.VerifyRefreshToken(req.RefreshToken)
+	if err != nil {
+		s.Logger.Error("Unable to verify refresh token",
+			zap.Error(err),
+		)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to refresh access token"))
+		return
+	}
+	if refresh == nil {
+		resp.WriteError(w, r, resp.ErrUnauthorized().AddMessages("Invalid refresh token"))
+		return
+	}
+
+	logger := s.Logger.With(
+		zap.String("CustomerID", refresh.ID),
+	)
+
+	cust, err := s.CustomerManager.GetByID(ctx, refresh.ID)
+	if err != nil {
+		logger.Error("Unable to fetch customer details from database",
+			zap.Error(err),
+		)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to refresh access token"))
+		return
+	}
+
+	// TODO: add blacklist
+	// TODO: allow clear on logout
+
+	claims := auth.Claims{
+		ID:    cust.ID,
+		Email: cust.Email,
+	}
+
+	accessToken, err := s.Auth.CreateTokenFromClaims(claims)
+	if err != nil {
+		logger.Error("Unable to generate access token during refresh",
+			zap.Error(err),
+		)
+		resp.WriteError(w, r, resp.ErrUnexpected().AddMessages("Unable to refresh access token"))
+		return
+	}
+
+	resp.WriteResponse(w, r, struct {
+		AccessToken string `json:"accessToken"`
+	}{
+		AccessToken: accessToken,
+	})
+}
+
+type TokensRequest struct {
+	UID   string `json:"uid"`
+	Token string `json:"token"`
+}
+
 func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	hexEmail := chi.URLParam(r, "uid")
-	token := chi.URLParam(r, "token")
 
-	emailBytes, err := hex.DecodeString(hexEmail)
+	var req TokensRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		resp.WriteError(w, r, resp.ErrInvalidJson())
+		return
+	}
+
+	emailBytes, err := hex.DecodeString(req.UID)
 	if err != nil {
 		resp.WriteError(w, r, resp.ErrBadRequest().WithMessage("Invalid UID was provided"))
 		return
@@ -89,7 +161,7 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	logger := s.Logger.With(zap.String("email", email))
 
-	valid, err := s.Auth.Verify(r.Context(), hexEmail, token)
+	valid, err := s.Auth.Verify(r.Context(), req.UID, req.Token)
 	if err != nil {
 		logger.Error("Unable to verify login PIN",
 			zap.Error(err),
@@ -125,22 +197,36 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	jwtToken, err := s.Auth.CreateTokenFromClaims(auth.Claims{
+	claims := auth.Claims{
 		ID:    cust.ID,
 		Email: cust.Email,
-	})
+	}
+
+	accessToken, err := s.Auth.CreateTokenFromClaims(claims)
 	if err != nil {
-		logger.Error("Unable to generate token",
+		logger.Error("Unable to generate access token",
+			zap.Error(err),
+		)
+		resp.WriteError(w, r, resp.ErrVerifyToken())
+		return
+	}
+	refreshToken, err := s.Auth.CreateRefreshTokenFromClaims(claims)
+	if err != nil {
+		logger.Error("Unable to generate refresh token",
 			zap.Error(err),
 		)
 		resp.WriteError(w, r, resp.ErrVerifyToken())
 		return
 	}
 
+	// TODO: save refreshToken (hashed) to database (in auth package)
+
 	resp.WriteResponse(w, r, struct {
-		Token string `json:"token"`
+		AccessToken  string `json:"accessToken"`
+		RefreshToken string `json:"refreshToken"`
 	}{
-		Token: jwtToken,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
 	})
 }
 
@@ -164,14 +250,21 @@ func (s *Service) getStripeCustomer(w http.ResponseWriter, r *http.Request) {
 	resp.WriteResponse(w, r, cust)
 }
 
+func (s *Service) AuthRouter() http.Handler {
+	r := chi.NewRouter()
+
+	r.Post("/requestLogin", s.requestLogin)
+	r.Post("/requestTokens", s.handleLogin)
+	r.Post("/refresh", s.refreshSession)
+
+	return r
+}
+
 // Router will return the routes under customer API
 func (s *Service) Router() http.Handler {
 	r := chi.NewRouter()
 
-	r.Post("/", s.requestLogin)
-	r.Get("/{uid}/{token}", s.handleLogin)
-
-	r.With(s.Auth.Middleware(), s.Auth.ClaimCheck()).Get("/stripe", s.getStripeCustomer)
+	r.Get("/stripe", s.getStripeCustomer)
 
 	return r
 }
