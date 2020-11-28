@@ -91,7 +91,7 @@ export default new Vuex.Store({
             } else {
                 throw {
                     apiError: true,
-                    err: json.error,
+                    error: json.error,
                     message: json.messages.join(' - ')
                 }
             }
