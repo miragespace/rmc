@@ -2,9 +2,9 @@ FROM golang:1.15.5-alpine
 
 RUN apk add git
 
-WORKDIR /go/src/github.com/zllovesuki/rmc
+WORKDIR /go/src/github.com/miragespace/rmc
 COPY .git .
-ADD . /go/src/github.com/zllovesuki/rmc
+ADD . /go/src/github.com/miragespace/rmc
 
 ENV CGO_ENABLED=0
 

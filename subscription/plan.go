@@ -1,7 +1,7 @@
 package subscription
 
 import (
-	"github.com/zllovesuki/rmc/spec"
+	"github.com/miragespace/rmc/spec"
 )
 
 // Part describes each Part of a Plan. This corresponds to Stripe's "Price"

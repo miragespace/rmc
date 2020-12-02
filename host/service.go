@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	resp "github.com/zllovesuki/rmc/response"
+	resp "github.com/miragespace/rmc/response"
 
 	"github.com/go-chi/chi"
 	"go.uber.org/zap"

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/zllovesuki/rmc/spec/protocol"
+	"github.com/miragespace/rmc/spec/protocol"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"

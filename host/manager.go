@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zllovesuki/rmc/spec"
-	"github.com/zllovesuki/rmc/spec/protocol"
+	"github.com/miragespace/rmc/spec"
+	"github.com/miragespace/rmc/spec/protocol"
 
 	extErrors "github.com/pkg/errors"
 	"go.uber.org/zap"

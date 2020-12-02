@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zllovesuki/rmc/auth"
-	resp "github.com/zllovesuki/rmc/response"
+	"github.com/miragespace/rmc/auth"
+	resp "github.com/miragespace/rmc/response"
 
 	"github.com/go-chi/chi"
 	"github.com/stripe/stripe-go/v72"

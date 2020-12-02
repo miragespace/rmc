@@ -1,4 +1,4 @@
-module github.com/zllovesuki/rmc
+module github.com/miragespace/rmc
 
 go 1.15
 

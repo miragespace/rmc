@@ -3,7 +3,7 @@ package util
 import (
 	"net/http"
 
-	"github.com/zllovesuki/rmc/response"
+	"github.com/miragespace/rmc/response"
 
 	"go.uber.org/zap"
 )

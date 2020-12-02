@@ -3,7 +3,7 @@ package host
 import (
 	"time"
 
-	"github.com/zllovesuki/rmc/spec"
+	"github.com/miragespace/rmc/spec"
 )
 
 // Host defines the physical/virtual server that will deploy Minecraft servers to Docker

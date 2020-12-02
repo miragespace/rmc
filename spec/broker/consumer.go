@@ -3,8 +3,8 @@ package broker
 import (
 	"context"
 
-	"github.com/zllovesuki/rmc/spec"
-	"github.com/zllovesuki/rmc/spec/protocol"
+	"github.com/miragespace/rmc/spec"
+	"github.com/miragespace/rmc/spec/protocol"
 )
 
 // Consumer defines a consumer receiving requests via message broker

@@ -3,9 +3,9 @@ package broker
 import (
 	"context"
 
-	"github.com/zllovesuki/rmc/spec"
-	"github.com/zllovesuki/rmc/spec/broker"
-	"github.com/zllovesuki/rmc/spec/protocol"
+	"github.com/miragespace/rmc/spec"
+	"github.com/miragespace/rmc/spec/broker"
+	"github.com/miragespace/rmc/spec/protocol"
 )
 
 type NATSBroker struct {

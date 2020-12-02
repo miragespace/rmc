@@ -3,7 +3,7 @@ package instance
 import (
 	"time"
 
-	"github.com/zllovesuki/rmc/spec"
+	"github.com/miragespace/rmc/spec"
 )
 
 // Instance describes a Minecraft server instance

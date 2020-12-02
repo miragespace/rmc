@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
-	resp "github.com/zllovesuki/rmc/response"
+	resp "github.com/miragespace/rmc/response"
 	"go.uber.org/zap"
 )
 

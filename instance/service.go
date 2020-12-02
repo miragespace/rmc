@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/zllovesuki/rmc/auth"
-	"github.com/zllovesuki/rmc/host"
-	resp "github.com/zllovesuki/rmc/response"
-	"github.com/zllovesuki/rmc/subscription"
+	"github.com/miragespace/rmc/auth"
+	"github.com/miragespace/rmc/host"
+	resp "github.com/miragespace/rmc/response"
+	"github.com/miragespace/rmc/subscription"
 
 	"github.com/go-chi/chi"
 	"github.com/google/uuid"

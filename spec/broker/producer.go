@@ -1,8 +1,8 @@
 package broker
 
 import (
-	"github.com/zllovesuki/rmc/spec"
-	"github.com/zllovesuki/rmc/spec/protocol"
+	"github.com/miragespace/rmc/spec"
+	"github.com/miragespace/rmc/spec/protocol"
 )
 
 // Producer defines a producer sending requests via message broker
